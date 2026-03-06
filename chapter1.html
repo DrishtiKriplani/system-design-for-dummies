@@ -1,0 +1,937 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ch 1: API Design — System Design for Dummies</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧠</text></svg>">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        :root {
+            --bg: #0f172a;
+            --bg-card: #1e293b;
+            --bg-code: #0d1117;
+            --text: #f8fafc;
+            --text-muted: #94a3b8;
+            --text-dim: #64748b;
+            --border: #334155;
+            --blue: #3b82f6;
+            --green: #10b981;
+            --orange: #f59e0b;
+            --purple: #8b5cf6;
+            --pink: #ec4899;
+            --red: #ef4444;
+            --cyan: #06b6d4;
+            --indigo: #6366f1;
+        }
+
+        html { scroll-behavior: smooth; scrollbar-width: thin; scrollbar-color: var(--border) var(--bg); }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            line-height: 1.6;
+            overflow-x: hidden;
+        }
+
+        /* ===== PROGRESS BAR ===== */
+        .progress-bar {
+            position: fixed;
+            top: 0;
+            left: 0;
+            height: 3px;
+            background: linear-gradient(90deg, var(--blue), var(--purple), var(--pink));
+            z-index: 1000;
+            transition: width 0.1s ease;
+        }
+
+        /* ===== NAV ===== */
+        nav {
+            position: fixed;
+            top: 3px;
+            left: 0;
+            right: 0;
+            z-index: 100;
+            background: rgba(15, 23, 42, 0.85);
+            backdrop-filter: blur(20px);
+            border-bottom: 1px solid rgba(51, 65, 85, 0.5);
+            transition: transform 0.3s ease;
+        }
+
+        nav.hidden { transform: translateY(calc(-100% - 3px)); }
+
+        .nav-inner {
+            max-width: 1100px;
+            margin: 0 auto;
+            padding: 0.65rem 2rem;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .nav-left {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+
+        .nav-logo {
+            display: flex;
+            align-items: center;
+            gap: 0.6rem;
+            font-weight: 800;
+            font-size: 0.95rem;
+            text-decoration: none;
+            color: var(--text);
+            letter-spacing: -0.5px;
+        }
+
+        .nav-logo-icon {
+            width: 28px;
+            height: 28px;
+            border-radius: 7px;
+            background: linear-gradient(135deg, var(--blue), var(--purple));
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.65rem;
+            font-weight: 900;
+            color: white;
+        }
+
+        .nav-logo span {
+            background: linear-gradient(135deg, var(--blue), var(--purple));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .nav-sep {
+            width: 1px;
+            height: 18px;
+            background: var(--border);
+        }
+
+        .nav-chapter-badge {
+            display: flex;
+            align-items: center;
+            gap: 0.4rem;
+            font-size: 0.72rem;
+            font-weight: 600;
+            color: var(--blue);
+            background: rgba(59, 130, 246, 0.08);
+            border: 1px solid rgba(59, 130, 246, 0.15);
+            padding: 0.2rem 0.7rem;
+            border-radius: 50px;
+        }
+
+        .nav-chapter-badge .dot {
+            width: 5px; height: 5px; border-radius: 50%;
+            background: var(--blue);
+        }
+
+        .nav-center {
+            display: flex;
+            gap: 0.25rem;
+        }
+
+        .nav-center a {
+            color: var(--text-muted);
+            text-decoration: none;
+            font-size: 0.78rem;
+            font-weight: 500;
+            padding: 0.35rem 0.7rem;
+            border-radius: 6px;
+            transition: all 0.2s;
+        }
+
+        .nav-center a:hover {
+            color: var(--text);
+            background: rgba(59, 130, 246, 0.1);
+        }
+
+        .nav-center a svg {
+            vertical-align: -2px;
+            margin-right: 3px;
+        }
+
+        .nav-right {
+            display: flex;
+            align-items: center;
+            gap: 0.6rem;
+        }
+
+        .nav-counter {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.72rem;
+            color: var(--text-dim);
+            background: var(--bg-card);
+            padding: 0.25rem 0.6rem;
+            border-radius: 20px;
+            border: 1px solid var(--border);
+        }
+
+        /* ===== CHAPTER HERO ===== */
+        .chapter-hero {
+            padding: 8rem 2rem 4rem;
+            text-align: center;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .chapter-hero-bg {
+            position: absolute;
+            inset: 0;
+            background:
+                radial-gradient(ellipse at 30% 50%, rgba(59,130,246,0.1) 0%, transparent 60%),
+                radial-gradient(ellipse at 70% 30%, rgba(139,92,246,0.08) 0%, transparent 50%);
+        }
+
+        .chapter-hero-content {
+            position: relative;
+            max-width: 700px;
+            margin: 0 auto;
+        }
+
+        .chapter-label {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            color: var(--blue);
+            margin-bottom: 1.2rem;
+        }
+
+        .chapter-label .ch-dot {
+            width: 8px; height: 8px; border-radius: 50%;
+            background: var(--blue);
+        }
+
+        .chapter-hero h1 {
+            font-size: clamp(2rem, 5vw, 3rem);
+            font-weight: 900;
+            letter-spacing: -1.5px;
+            line-height: 1.15;
+            margin-bottom: 0.8rem;
+        }
+
+        .chapter-hero h1 .gradient {
+            background: linear-gradient(135deg, var(--blue), var(--purple));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .chapter-hero > .chapter-hero-content > p {
+            color: var(--text-muted);
+            font-size: 1.05rem;
+            max-width: 500px;
+            margin: 0 auto;
+            line-height: 1.7;
+        }
+
+        .chapter-tags {
+            display: flex;
+            justify-content: center;
+            gap: 0.5rem;
+            flex-wrap: wrap;
+            margin-top: 1.8rem;
+        }
+
+        .chapter-tag {
+            padding: 0.3rem 0.85rem;
+            border-radius: 50px;
+            font-size: 0.7rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        /* ===== SIDEBAR ===== */
+        .sidebar {
+            position: fixed;
+            left: 1.2rem;
+            top: 50%;
+            transform: translateY(-50%);
+            z-index: 50;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .sidebar a {
+            width: 8px; height: 8px; border-radius: 50%;
+            background: var(--border);
+            transition: all 0.3s;
+            display: block;
+            position: relative;
+        }
+
+        .sidebar a:hover { background: var(--text-muted); transform: scale(1.5); }
+
+        .sidebar a.active {
+            background: var(--blue);
+            box-shadow: 0 0 8px rgba(59, 130, 246, 0.5);
+            transform: scale(1.5);
+        }
+
+        .sidebar a .tooltip {
+            position: absolute;
+            left: 18px;
+            top: 50%;
+            transform: translateY(-50%);
+            background: var(--bg-card);
+            color: var(--text);
+            padding: 0.3rem 0.7rem;
+            border-radius: 6px;
+            font-size: 0.65rem;
+            white-space: nowrap;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.2s;
+            border: 1px solid var(--border);
+        }
+
+        .sidebar a:hover .tooltip { opacity: 1; }
+
+        /* ===== CONCEPTS ===== */
+        .concepts-section {
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 2rem 2rem 4rem;
+        }
+
+        .concept {
+            position: relative;
+            margin-bottom: 3rem;
+            opacity: 0;
+            transform: translateY(30px);
+            transition: all 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        .concept.visible { opacity: 1; transform: translateY(0); }
+
+        .concept-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            overflow: hidden;
+            transition: all 0.3s;
+        }
+
+        .concept-card:hover {
+            border-color: rgba(59, 130, 246, 0.3);
+            box-shadow: 0 8px 30px rgba(0, 0, 0, 0.3);
+            transform: translateY(-2px);
+        }
+
+        .concept-accent { height: 3px; }
+
+        .concept-body { padding: 1.8rem 2rem; }
+
+        .concept-top {
+            display: flex;
+            align-items: flex-start;
+            gap: 1rem;
+            margin-bottom: 1rem;
+        }
+
+        .concept-number {
+            flex-shrink: 0;
+            width: 40px; height: 40px;
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-family: 'JetBrains Mono', monospace;
+            font-weight: 700;
+            font-size: 0.9rem;
+            color: white;
+        }
+
+        .concept-title {
+            font-size: 1.4rem;
+            font-weight: 700;
+            letter-spacing: -0.5px;
+            padding-top: 0.35rem;
+        }
+
+        .concept-desc {
+            color: var(--text-muted);
+            font-size: 1rem;
+            line-height: 1.7;
+            margin-bottom: 1.2rem;
+        }
+
+        .concept-code {
+            background: var(--bg-code);
+            border: 1px solid rgba(51, 65, 85, 0.5);
+            border-radius: 10px;
+            padding: 1rem 1.2rem;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.85rem;
+            color: var(--green);
+            overflow-x: auto;
+            position: relative;
+        }
+
+        .concept-code::before {
+            content: attr(data-label);
+            position: absolute;
+            top: -0.6rem; left: 1rem;
+            font-size: 0.6rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            padding: 0.1rem 0.5rem;
+            border-radius: 4px;
+            background: var(--bg-code);
+            border: 1px solid var(--border);
+            font-family: 'Inter', sans-serif;
+            font-weight: 600;
+        }
+
+        .concept-code .keyword { color: var(--purple); }
+        .concept-code .method { color: var(--blue); }
+        .concept-code .string { color: var(--orange); }
+        .concept-code .comment { color: var(--text-dim); }
+        .concept-code .status { color: var(--red); }
+
+        /* ===== CATEGORY DIVIDERS ===== */
+        .category-divider {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            margin: 4rem 0 2.5rem;
+            opacity: 0;
+            transform: translateY(20px);
+            transition: all 0.5s ease;
+        }
+
+        .category-divider.visible { opacity: 1; transform: translateY(0); }
+
+        .category-divider .line { flex: 1; height: 1px; background: var(--border); }
+
+        .category-divider .label {
+            font-size: 0.7rem;
+            text-transform: uppercase;
+            letter-spacing: 3px;
+            font-weight: 600;
+            padding: 0.4rem 1rem;
+            border-radius: 50px;
+            border: 1px solid var(--border);
+        }
+
+        /* ===== CHEAT SHEET ===== */
+        .cheatsheet {
+            max-width: 1000px;
+            margin: 0 auto;
+            padding: 5rem 2rem;
+            border-top: 1px solid var(--border);
+        }
+
+        .cheatsheet h2 {
+            text-align: center;
+            font-size: 2rem;
+            font-weight: 800;
+            letter-spacing: -1px;
+            margin-bottom: 0.5rem;
+        }
+
+        .cheatsheet .sub {
+            text-align: center;
+            color: var(--text-muted);
+            margin-bottom: 3rem;
+        }
+
+        .cheatsheet-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: 1rem;
+        }
+
+        .cheat-item {
+            display: flex;
+            align-items: center;
+            gap: 0.8rem;
+            padding: 0.8rem 1rem;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            transition: all 0.2s;
+            cursor: pointer;
+            text-decoration: none;
+            color: inherit;
+        }
+
+        .cheat-item:hover { border-color: var(--blue); transform: translateX(4px); }
+
+        .cheat-num {
+            font-family: 'JetBrains Mono', monospace;
+            font-weight: 700; font-size: 0.7rem;
+            width: 28px; height: 28px;
+            border-radius: 8px;
+            display: flex; align-items: center; justify-content: center;
+            color: white; flex-shrink: 0;
+        }
+
+        .cheat-name { font-weight: 600; font-size: 0.9rem; }
+        .cheat-one { color: var(--text-dim); font-size: 0.75rem; }
+
+        /* ===== CHAPTER NAVIGATION (bottom) ===== */
+        .chapter-nav-bottom {
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 2rem 2rem 4rem;
+            display: flex;
+            gap: 1rem;
+        }
+
+        .ch-nav-card {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            padding: 1.2rem 1.5rem;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 14px;
+            text-decoration: none;
+            color: inherit;
+            transition: all 0.3s;
+        }
+
+        .ch-nav-card:hover {
+            border-color: rgba(59, 130, 246, 0.4);
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(0,0,0,0.2);
+        }
+
+        .ch-nav-card.disabled {
+            opacity: 0.35;
+            pointer-events: none;
+        }
+
+        .ch-nav-card.prev { justify-content: flex-start; }
+        .ch-nav-card.next { justify-content: flex-end; text-align: right; }
+
+        .ch-nav-arrow {
+            font-size: 1.3rem;
+            color: var(--blue);
+            flex-shrink: 0;
+            transition: transform 0.2s;
+        }
+
+        .ch-nav-card.prev:hover .ch-nav-arrow { transform: translateX(-4px); }
+        .ch-nav-card.next:hover .ch-nav-arrow { transform: translateX(4px); }
+
+        .ch-nav-info .ch-nav-label {
+            font-size: 0.65rem;
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
+            color: var(--text-dim);
+            font-weight: 600;
+            margin-bottom: 0.15rem;
+        }
+
+        .ch-nav-info .ch-nav-title {
+            font-weight: 700;
+            font-size: 0.95rem;
+        }
+
+        .ch-nav-info .ch-nav-sub {
+            font-size: 0.72rem;
+            color: var(--text-dim);
+        }
+
+        /* ===== BACK TO TOP ===== */
+        .back-to-top {
+            position: fixed;
+            bottom: 2rem; right: 2rem;
+            width: 44px; height: 44px;
+            border-radius: 12px;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            color: var(--text-muted);
+            display: flex; align-items: center; justify-content: center;
+            cursor: pointer;
+            opacity: 0; transform: translateY(10px);
+            transition: all 0.3s;
+            z-index: 50;
+            font-size: 1.2rem;
+        }
+
+        .back-to-top.visible { opacity: 1; transform: translateY(0); }
+        .back-to-top:hover { background: var(--blue); color: white; border-color: var(--blue); }
+
+        /* ===== FOOTER ===== */
+        footer {
+            border-top: 1px solid var(--border);
+            padding: 3rem 2rem;
+            text-align: center;
+        }
+
+        footer p { color: var(--text-dim); font-size: 0.85rem; }
+
+        footer .gradient-line {
+            width: 100px; height: 3px;
+            background: linear-gradient(90deg, var(--blue), var(--purple), var(--pink));
+            margin: 0 auto 1.5rem;
+            border-radius: 2px;
+        }
+
+        /* ===== RESPONSIVE ===== */
+        @media (max-width: 768px) {
+            .sidebar { display: none; }
+            .nav-center { display: none; }
+            .nav-sep { display: none; }
+            .nav-chapter-badge { display: none; }
+            .concept-body { padding: 1.2rem 1.3rem; }
+            .concept-title { font-size: 1.15rem; }
+            .cheatsheet-grid { grid-template-columns: 1fr; }
+            .chapter-nav-bottom { flex-direction: column; }
+            .ch-nav-card.next { text-align: left; justify-content: flex-start; }
+        }
+    </style>
+</head>
+<body>
+    <!-- Progress Bar -->
+    <div class="progress-bar" id="progressBar"></div>
+
+    <!-- Navigation -->
+    <nav id="navbar">
+        <div class="nav-inner">
+            <div class="nav-left">
+                <a href="index.html" class="nav-logo">
+                    <div class="nav-logo-icon">SD</div>
+                    <span>System Design for Dummies</span>
+                </a>
+                <div class="nav-sep"></div>
+                <div class="nav-chapter-badge">
+                    <span class="dot"></span>
+                    Chapter 01
+                </div>
+            </div>
+            <div class="nav-center">
+                <a href="index.html">
+                    <svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+                    Home
+                </a>
+                <a href="index.html#chapters">All Chapters</a>
+                <a href="#concepts">Concepts</a>
+                <a href="#cheatsheet">Cheat Sheet</a>
+            </div>
+            <div class="nav-right">
+                <div class="nav-counter" id="navCounter">0 / 20</div>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Sidebar Dots -->
+    <div class="sidebar" id="sidebar"></div>
+
+    <!-- Chapter Hero -->
+    <section class="chapter-hero">
+        <div class="chapter-hero-bg"></div>
+        <div class="chapter-hero-content">
+            <div class="chapter-label">
+                <span class="ch-dot"></span>
+                Chapter 01
+            </div>
+            <h1>20 <span class="gradient">API Design</span> Concepts</h1>
+            <p>Everything you need to design, build, and scale APIs that developers actually want to use.</p>
+            <div class="chapter-tags">
+                <span class="chapter-tag" style="background: rgba(59,130,246,0.15); color: var(--blue);">REST</span>
+                <span class="chapter-tag" style="background: rgba(139,92,246,0.15); color: var(--purple);">GraphQL</span>
+                <span class="chapter-tag" style="background: rgba(16,185,129,0.15); color: var(--green);">Auth</span>
+                <span class="chapter-tag" style="background: rgba(245,158,11,0.15); color: var(--orange);">Scale</span>
+                <span class="chapter-tag" style="background: rgba(236,72,153,0.15); color: var(--pink);">Security</span>
+            </div>
+        </div>
+    </section>
+
+    <!-- Concepts -->
+    <section class="concepts-section" id="concepts">
+        <div id="conceptsList"></div>
+    </section>
+
+    <!-- Cheat Sheet -->
+    <section class="cheatsheet" id="cheatsheet">
+        <h2>Chapter 1 &mdash; Cheat Sheet</h2>
+        <p class="sub">All 20 API Design concepts at a glance.</p>
+        <div class="cheatsheet-grid" id="cheatGrid"></div>
+    </section>
+
+    <!-- Bottom Chapter Navigation -->
+    <div class="chapter-nav-bottom">
+        <a href="index.html" class="ch-nav-card prev">
+            <span class="ch-nav-arrow">&larr;</span>
+            <div class="ch-nav-info">
+                <div class="ch-nav-label">Back to</div>
+                <div class="ch-nav-title">Home</div>
+                <div class="ch-nav-sub">All Chapters</div>
+            </div>
+        </a>
+        <div class="ch-nav-card next disabled">
+            <div class="ch-nav-info">
+                <div class="ch-nav-label">Next Chapter</div>
+                <div class="ch-nav-title">Metrics & Logging</div>
+                <div class="ch-nav-sub">Coming Soon</div>
+            </div>
+            <span class="ch-nav-arrow">&rarr;</span>
+        </div>
+    </div>
+
+    <!-- Footer -->
+    <footer>
+        <div class="gradient-line"></div>
+        <p>System Design for Dummies &mdash; Learn system design, one chapter at a time.</p>
+    </footer>
+
+    <!-- Back to Top -->
+    <button class="back-to-top" id="backToTop" onclick="window.scrollTo({top:0})">&#8593;</button>
+
+    <script>
+        const concepts = [
+            {
+                name: "Endpoint",
+                desc: "A URL where your API lives. Like a street address for your service. Each endpoint represents a specific resource or action.",
+                code: '<span class="method">GET</span>  /api/users\n<span class="method">GET</span>  /api/users/<span class="string">123</span>\n<span class="method">POST</span> /api/users\n<span class="method">GET</span>  /api/users/<span class="string">123</span>/orders',
+                color: "var(--blue)", category: "fundamentals"
+            },
+            {
+                name: "HTTP Methods",
+                desc: "GET reads, POST creates, PUT replaces, PATCH updates, DELETE removes. These are the verbs of the web — every API action maps to one.",
+                code: '<span class="method">GET</span>    /users     <span class="comment"># Read all users</span>\n<span class="method">POST</span>   /users     <span class="comment"># Create a user</span>\n<span class="method">PUT</span>    /users/1   <span class="comment"># Replace user 1</span>\n<span class="method">PATCH</span>  /users/1   <span class="comment"># Update user 1</span>\n<span class="method">DELETE</span> /users/1   <span class="comment"># Delete user 1</span>',
+                color: "var(--green)", category: "fundamentals"
+            },
+            {
+                name: "Request-Response",
+                desc: "Client sends a request, server returns a response. Every API conversation follows this pattern — ask and answer, that's it.",
+                code: '<span class="comment">// Client Request</span>\n<span class="method">GET</span> /api/users/<span class="string">42</span> HTTP/1.1\nHost: api.example.com\nAuthorization: Bearer token123\n\n<span class="comment">// Server Response</span>\nHTTP/1.1 <span class="status">200</span> OK\n{ <span class="string">"id"</span>: 42, <span class="string">"name"</span>: <span class="string">"Alice"</span> }',
+                color: "var(--orange)", category: "fundamentals"
+            },
+            {
+                name: "Status Codes",
+                desc: "Numbers that tell you what happened. 2xx means success, 4xx means you messed up, 5xx means the server messed up.",
+                code: '<span class="status">200</span> OK             <span class="comment"># Success</span>\n<span class="status">201</span> Created         <span class="comment"># Resource created</span>\n<span class="status">400</span> Bad Request     <span class="comment"># Invalid input</span>\n<span class="status">401</span> Unauthorized    <span class="comment"># Not logged in</span>\n<span class="status">404</span> Not Found       <span class="comment"># Wrong URL</span>\n<span class="status">500</span> Server Error    <span class="comment"># Something broke</span>',
+                color: "var(--red)", category: "fundamentals"
+            },
+            {
+                name: "Authentication",
+                desc: 'Proving WHO you are. Like showing your ID at the door. Without auth, anyone can walk in and mess with your data.',
+                code: '<span class="comment"># API Key</span>\nX-API-Key: sk_live_abc123\n\n<span class="comment"># JWT Bearer Token</span>\nAuthorization: Bearer eyJhbGciOi...\n\n<span class="comment"># Basic Auth</span>\nAuthorization: Basic dXNlcjpwYXNz',
+                color: "var(--purple)", category: "security"
+            },
+            {
+                name: "Authorization",
+                desc: "Proving WHAT you can do. You're inside the building, but can you access the VIP room? Roles and permissions define that.",
+                code: '<span class="comment"># Role-based access</span>\n{\n  <span class="string">"role"</span>: <span class="string">"admin"</span>,\n  <span class="string">"permissions"</span>: [<span class="string">"read"</span>, <span class="string">"write"</span>, <span class="string">"delete"</span>]\n}\n\n<span class="comment"># Scope-based (OAuth)</span>\nscope: <span class="string">"users:read users:write"</span>',
+                color: "var(--pink)", category: "security"
+            },
+            {
+                name: "Access Tokens",
+                desc: "A temporary pass that proves you're logged in. It expires, so even if stolen, the damage is limited. Short-lived by design.",
+                code: '<span class="comment"># JWT Structure</span>\nHeader:  { <span class="string">"alg"</span>: <span class="string">"HS256"</span> }\nPayload: { <span class="string">"user_id"</span>: 42, <span class="string">"exp"</span>: 1700000 }\nSignature: HMAC(header + payload, secret)\n\n<span class="comment"># Typical expiry: 15 min - 1 hour</span>',
+                color: "var(--indigo)", category: "security"
+            },
+            {
+                name: "OAuth 2.0",
+                desc: '"Login with Google" flow. Let users grant limited access to their data without sharing passwords. The industry standard for delegated auth.',
+                code: '<span class="comment"># Authorization Code Flow</span>\n1. User clicks <span class="string">"Login with Google"</span>\n2. Redirect to Google\'s auth page\n3. User grants permission\n4. Google sends auth <span class="keyword">code</span>\n5. Exchange code for <span class="keyword">access_token</span>\n6. Use token to call Google APIs',
+                color: "var(--cyan)", category: "security"
+            },
+            {
+                name: "Rate Limiting",
+                desc: "Max requests allowed per time window. Prevents abuse and keeps your servers alive. Without it, one bad actor can take everything down.",
+                code: '<span class="comment"># Response Headers</span>\nX-RateLimit-Limit: <span class="status">100</span>\nX-RateLimit-Remaining: <span class="status">23</span>\nX-RateLimit-Reset: <span class="status">1700000000</span>\n\n<span class="comment"># When exceeded</span>\nHTTP/1.1 <span class="status">429</span> Too Many Requests\nRetry-After: <span class="status">60</span>',
+                color: "var(--orange)", category: "performance"
+            },
+            {
+                name: "Throttling",
+                desc: "Slowing down requests instead of blocking them. Like a speed bump, not a wall. You still get through, just not at full speed.",
+                code: '<span class="comment"># Strategies</span>\nFixed Window:   <span class="string">100 req/min</span> (resets each minute)\nSliding Window: <span class="string">100 req/min</span> (rolling window)\nToken Bucket:   <span class="string">Refills at steady rate</span>\nLeaky Bucket:   <span class="string">Processes at fixed rate</span>',
+                color: "var(--red)", category: "performance"
+            },
+            {
+                name: "Pagination",
+                desc: "Returning data in chunks instead of all at once. Nobody needs 1 million rows in a single response. Your API (and users) will thank you.",
+                code: '<span class="comment"># Offset-based</span>\n<span class="method">GET</span> /api/users?<span class="keyword">page</span>=2&<span class="keyword">limit</span>=20\n\n<span class="comment"># Cursor-based (better for large datasets)</span>\n<span class="method">GET</span> /api/users?<span class="keyword">cursor</span>=eyJpZCI6MTAwfQ\n\n<span class="comment"># Response</span>\n{ <span class="string">"data"</span>: [...], <span class="string">"next_cursor"</span>: <span class="string">"abc"</span> }',
+                color: "var(--green)", category: "performance"
+            },
+            {
+                name: "Caching",
+                desc: "Storing responses to skip repeated work. Same question? Here's the saved answer. Saves time, bandwidth, and server resources.",
+                code: '<span class="comment"># Cache Headers</span>\nCache-Control: max-age=<span class="status">3600</span>\nETag: <span class="string">"abc123"</span>\n\n<span class="comment"># Conditional Request</span>\nIf-None-Match: <span class="string">"abc123"</span>\n\n<span class="comment"># Response (not modified)</span>\nHTTP/1.1 <span class="status">304</span> Not Modified',
+                color: "var(--blue)", category: "performance"
+            },
+            {
+                name: "Idempotency",
+                desc: "Same request twice = same result. Retry-safe. No double charges, no duplicate records. Essential for payment and financial APIs.",
+                code: '<span class="comment"># Send with unique key</span>\n<span class="method">POST</span> /api/payments\nIdempotency-Key: <span class="string">"txn_abc123"</span>\n\n<span class="comment"># Retry same request safely</span>\n<span class="method">POST</span> /api/payments\nIdempotency-Key: <span class="string">"txn_abc123"</span>\n<span class="comment"># Returns same result, no double charge</span>',
+                color: "var(--purple)", category: "reliability"
+            },
+            {
+                name: "Webhooks",
+                desc: '"Don\'t call us, we\'ll call you." Instead of polling, the server pushes events to your URL when something happens. Real-time, efficient.',
+                code: '<span class="comment"># Register webhook</span>\n<span class="method">POST</span> /api/webhooks\n{\n  <span class="string">"url"</span>: <span class="string">"https://your-app.com/hook"</span>,\n  <span class="string">"events"</span>: [<span class="string">"payment.completed"</span>]\n}\n\n<span class="comment"># Your server receives</span>\n{ <span class="string">"event"</span>: <span class="string">"payment.completed"</span>, ... }',
+                color: "var(--pink)", category: "reliability"
+            },
+            {
+                name: "API Versioning",
+                desc: "Changing your API without breaking existing users. Old versions keep working, new versions get new features. Backwards compatibility matters.",
+                code: '<span class="comment"># URL Versioning</span>\n<span class="method">GET</span> /v1/users  <span class="comment"># Old version</span>\n<span class="method">GET</span> /v2/users  <span class="comment"># New version</span>\n\n<span class="comment"># Header Versioning</span>\nAccept: application/vnd.api+json; <span class="keyword">version</span>=2\n\n<span class="comment"># Query Parameter</span>\n<span class="method">GET</span> /users?<span class="keyword">version</span>=2',
+                color: "var(--indigo)", category: "reliability"
+            },
+            {
+                name: "OpenAPI / Swagger",
+                desc: "A blueprint for your API. One YAML/JSON file auto-generates docs, SDKs, mock servers, and tests. The single source of truth.",
+                code: '<span class="keyword">openapi</span>: 3.0.0\n<span class="keyword">paths</span>:\n  /users:\n    <span class="method">get</span>:\n      summary: <span class="string">"List all users"</span>\n      responses:\n        <span class="status">200</span>:\n          description: <span class="string">"Success"</span>\n          content:\n            application/json: ...',
+                color: "var(--cyan)", category: "architecture"
+            },
+            {
+                name: "REST vs GraphQL",
+                desc: "REST = many endpoints, fixed data shape. GraphQL = one endpoint, ask for exactly what you need. Different tools for different jobs.",
+                code: '<span class="comment"># REST (multiple calls)</span>\n<span class="method">GET</span> /users/1\n<span class="method">GET</span> /users/1/posts\n<span class="method">GET</span> /users/1/followers\n\n<span class="comment"># GraphQL (one call)</span>\n<span class="keyword">query</span> {\n  user(id: 1) { name posts { title } }\n}',
+                color: "var(--orange)", category: "architecture"
+            },
+            {
+                name: "API Gateway",
+                desc: "The front door to your system. Handles auth, rate limiting, routing, and logging before requests even hit your services.",
+                code: '<span class="comment"># Request flow through gateway</span>\nClient\n  \u2192 <span class="keyword">API Gateway</span>\n    \u2192 Auth Check\n    \u2192 Rate Limit\n    \u2192 Route to Service\n    \u2192 Transform Response\n  \u2192 Client\n\n<span class="comment"># Tools: Kong, AWS API GW, Nginx</span>',
+                color: "var(--green)", category: "architecture"
+            },
+            {
+                name: "Microservices",
+                desc: "Splitting one big app into small, independent services. Each owns its own data and API. Deploy, scale, and fail independently.",
+                code: '<span class="comment"># Monolith</span>\n[    All-in-One App     ]\n\n<span class="comment"># Microservices</span>\n[User Svc] [Order Svc] [Pay Svc]\n    \u2195           \u2195          \u2195\n [User DB]  [Order DB]  [Pay DB]',
+                color: "var(--red)", category: "architecture"
+            },
+            {
+                name: "Error Handling",
+                desc: "Clear, consistent error responses. Tell the caller what went wrong and how to fix it. Good errors save hours of debugging.",
+                code: '<span class="comment"># Good error response</span>\n{\n  <span class="string">"error"</span>: {\n    <span class="string">"code"</span>: <span class="string">"VALIDATION_ERROR"</span>,\n    <span class="string">"message"</span>: <span class="string">"Email is required"</span>,\n    <span class="string">"field"</span>: <span class="string">"email"</span>,\n    <span class="string">"docs"</span>: <span class="string">"https://api.dev/errors#400"</span>\n  }\n}',
+                color: "var(--purple)", category: "architecture"
+            }
+        ];
+
+        const categories = {
+            fundamentals: { label: "Fundamentals", range: "01-04" },
+            security: { label: "Security & Auth", range: "05-08" },
+            performance: { label: "Performance", range: "09-12" },
+            reliability: { label: "Reliability", range: "13-15" },
+            architecture: { label: "Architecture", range: "16-20" }
+        };
+
+        // Build sidebar
+        const sidebar = document.getElementById('sidebar');
+        concepts.forEach((c, i) => {
+            const a = document.createElement('a');
+            a.href = `#concept-${i}`;
+            a.innerHTML = `<span class="tooltip">${String(i+1).padStart(2,'0')} ${c.name}</span>`;
+            sidebar.appendChild(a);
+        });
+
+        // Build concept cards
+        const list = document.getElementById('conceptsList');
+        let lastCategory = '';
+
+        concepts.forEach((c, i) => {
+            if (c.category !== lastCategory) {
+                lastCategory = c.category;
+                const cat = categories[c.category];
+                const divider = document.createElement('div');
+                divider.className = 'category-divider';
+                divider.innerHTML = `
+                    <div class="line"></div>
+                    <div class="label" style="color: ${c.color}; border-color: ${c.color}30;">${cat.label} &mdash; ${cat.range}</div>
+                    <div class="line"></div>
+                `;
+                list.appendChild(divider);
+            }
+
+            const div = document.createElement('div');
+            div.className = 'concept';
+            div.id = `concept-${i}`;
+            div.innerHTML = `
+                <div class="concept-card">
+                    <div class="concept-accent" style="background: linear-gradient(90deg, ${c.color}, ${c.color}60);"></div>
+                    <div class="concept-body">
+                        <div class="concept-top">
+                            <div class="concept-number" style="background: ${c.color};">${String(i+1).padStart(2,'0')}</div>
+                            <div class="concept-title">${c.name}</div>
+                        </div>
+                        <div class="concept-desc">${c.desc}</div>
+                        <div class="concept-code" data-label="example">${c.code}</div>
+                    </div>
+                </div>
+            `;
+            list.appendChild(div);
+        });
+
+        // Build cheat sheet
+        const grid = document.getElementById('cheatGrid');
+        concepts.forEach((c, i) => {
+            const a = document.createElement('a');
+            a.className = 'cheat-item';
+            a.href = `#concept-${i}`;
+            a.innerHTML = `
+                <div class="cheat-num" style="background: ${c.color};">${String(i+1).padStart(2,'0')}</div>
+                <div>
+                    <div class="cheat-name">${c.name}</div>
+                    <div class="cheat-one">${c.desc.split('.')[0]}.</div>
+                </div>
+            `;
+            grid.appendChild(a);
+        });
+
+        // ===== SCROLL EFFECTS =====
+        let lastScroll = 0;
+        const navEl = document.getElementById('navbar');
+        const progressBar = document.getElementById('progressBar');
+        const backToTop = document.getElementById('backToTop');
+        const navCounter = document.getElementById('navCounter');
+        const sidebarDots = sidebar.querySelectorAll('a');
+
+        const observer = new IntersectionObserver((entries) => {
+            entries.forEach(e => {
+                if (e.isIntersecting) e.target.classList.add('visible');
+            });
+        }, { threshold: 0.15, rootMargin: '0px 0px -50px 0px' });
+
+        document.querySelectorAll('.concept, .category-divider').forEach(el => observer.observe(el));
+
+        window.addEventListener('scroll', () => {
+            const scrollTop = window.scrollY;
+            const docHeight = document.documentElement.scrollHeight - window.innerHeight;
+            const progress = (scrollTop / docHeight) * 100;
+
+            progressBar.style.width = progress + '%';
+
+            if (scrollTop > lastScroll && scrollTop > 100) {
+                navEl.classList.add('hidden');
+            } else {
+                navEl.classList.remove('hidden');
+            }
+            lastScroll = scrollTop;
+
+            backToTop.classList.toggle('visible', scrollTop > 500);
+
+            let visibleCount = 0;
+            let activeIdx = -1;
+            document.querySelectorAll('.concept').forEach((el, i) => {
+                const rect = el.getBoundingClientRect();
+                if (rect.top < window.innerHeight * 0.7) visibleCount = i + 1;
+                if (rect.top < window.innerHeight * 0.5 && rect.bottom > 0) activeIdx = i;
+            });
+
+            navCounter.textContent = `${visibleCount} / 20`;
+            sidebarDots.forEach((dot, i) => dot.classList.toggle('active', i === activeIdx));
+        });
+    </script>
+</body>
+</html>
