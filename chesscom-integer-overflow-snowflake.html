@@ -1,0 +1,933 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Integer Overflow & Snowflake IDs — Chess.com Case Study</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      background: #06060a;
+      color: #e4e4e7;
+      overflow: hidden;
+      height: 100vh;
+      width: 100vw;
+    }
+
+    /* ── Fullscreen Slide Container ── */
+    .slides {
+      display: flex;
+      width: 500vw;
+      height: 100vh;
+      transition: transform 0.6s cubic-bezier(0.25, 0.8, 0.25, 1);
+    }
+    .slide {
+      width: 100vw;
+      height: 100vh;
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+      overflow: hidden;
+      padding: 40px 60px;
+    }
+    .slide-inner {
+      max-width: 900px;
+      width: 100%;
+      position: relative;
+      z-index: 1;
+    }
+
+    /* ── Ambient Glows per slide ── */
+    .slide::before, .slide::after {
+      content: '';
+      position: absolute;
+      width: 500px;
+      height: 500px;
+      border-radius: 50%;
+      pointer-events: none;
+      filter: blur(80px);
+      opacity: 0.4;
+    }
+    .s1::before { top: -200px; right: -150px; background: #8b5cf6; }
+    .s1::after  { bottom: -200px; left: -150px; background: #ec4899; }
+    .s2::before { top: -150px; left: -150px; background: #ef4444; }
+    .s2::after  { bottom: -150px; right: -100px; background: #f59e0b; }
+    .s3::before { top: -200px; right: -100px; background: #8b5cf6; }
+    .s3::after  { bottom: -200px; left: -100px; background: #ef4444; }
+    .s4::before { top: -150px; left: -100px; background: #06b6d4; }
+    .s4::after  { bottom: -200px; right: -150px; background: #8b5cf6; }
+    .s5::before { top: -200px; right: -150px; background: #22c55e; }
+    .s5::after  { bottom: -150px; left: -100px; background: #06b6d4; }
+
+    /* ── Dot Navigation ── */
+    .dots {
+      position: fixed;
+      bottom: 32px;
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      gap: 12px;
+      z-index: 100;
+      background: #18181b90;
+      backdrop-filter: blur(12px);
+      padding: 10px 20px;
+      border-radius: 30px;
+      border: 1px solid #27272a;
+    }
+    .dot {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background: #3f3f46;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      border: none;
+      outline: none;
+    }
+    .dot:hover { background: #71717a; }
+    .dot.active {
+      background: linear-gradient(135deg, #8b5cf6, #06b6d4);
+      box-shadow: 0 0 12px #8b5cf650;
+      transform: scale(1.25);
+    }
+
+    /* ── Arrow Navigation ── */
+    .nav-arrow {
+      position: fixed;
+      top: 50%;
+      transform: translateY(-50%);
+      z-index: 100;
+      width: 48px;
+      height: 48px;
+      border-radius: 50%;
+      border: 1px solid #27272a;
+      background: #18181b90;
+      backdrop-filter: blur(12px);
+      color: #a1a1aa;
+      font-size: 20px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.3s ease;
+    }
+    .nav-arrow:hover { background: #27272a; color: #fff; border-color: #8b5cf650; }
+    .nav-arrow.left { left: 20px; }
+    .nav-arrow.right { right: 20px; }
+    .nav-arrow.hidden { opacity: 0; pointer-events: none; }
+
+    /* ── Slide Counter ── */
+    .slide-counter {
+      position: fixed;
+      top: 24px;
+      right: 32px;
+      z-index: 100;
+      font-size: 12px;
+      color: #52525b;
+      font-weight: 600;
+      letter-spacing: 1px;
+    }
+    .slide-counter .current {
+      color: #8b5cf6;
+      font-size: 16px;
+    }
+
+    /* ══════════════════════════════════════════
+       SLIDE 1: TITLE / INCIDENT
+    ══════════════════════════════════════════ */
+    .hero-badge {
+      display: inline-block;
+      background: linear-gradient(135deg, #8b5cf6, #ec4899);
+      color: #fff;
+      font-size: 10px;
+      font-weight: 800;
+      letter-spacing: 3px;
+      text-transform: uppercase;
+      padding: 6px 22px;
+      border-radius: 30px;
+      margin-bottom: 20px;
+      box-shadow: 0 0 30px #8b5cf630;
+    }
+    .hero-title {
+      font-size: 48px;
+      font-weight: 800;
+      background: linear-gradient(135deg, #c084fc, #22d3ee);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      line-height: 1.2;
+      margin-bottom: 16px;
+    }
+    .hero-sub {
+      font-size: 18px;
+      color: #71717a;
+      line-height: 1.6;
+      margin-bottom: 28px;
+    }
+    .hero-number {
+      font-family: 'Courier New', monospace;
+      font-size: 56px;
+      font-weight: 800;
+      background: linear-gradient(135deg, #f472b6, #fb923c);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      margin: 20px 0;
+    }
+    .hero-desc {
+      font-size: 16px;
+      color: #a1a1aa;
+      line-height: 1.7;
+    }
+    .hero-desc b { color: #c084fc; }
+
+    .stats-row {
+      display: flex;
+      gap: 16px;
+      margin-top: 32px;
+    }
+    .stat-pill {
+      flex: 1;
+      background: linear-gradient(135deg, #18181b, #1e1e24);
+      border-radius: 14px;
+      padding: 20px 16px;
+      text-align: center;
+      border: 1px solid #27272a;
+      box-shadow: 0 4px 25px #00000025;
+    }
+    .stat-pill .icon { font-size: 24px; margin-bottom: 8px; }
+    .stat-pill .val {
+      font-size: 22px;
+      font-weight: 800;
+      background: linear-gradient(135deg, #f472b6, #c084fc);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .stat-pill .lbl {
+      font-size: 10px;
+      color: #52525b;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      margin-top: 4px;
+    }
+
+    /* ══════════════════════════════════════════
+       SLIDE 2: OVERFLOW VISUAL
+    ══════════════════════════════════════════ */
+    .section-label {
+      font-size: 13px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 3px;
+      margin-bottom: 20px;
+      padding-left: 16px;
+      border-left: 4px solid #8b5cf6;
+      color: #a1a1aa;
+    }
+    .section-label.red { border-left-color: #ef4444; }
+    .section-label.cyan { border-left-color: #06b6d4; }
+    .section-label.green { border-left-color: #22c55e; }
+
+    .overflow-explain {
+      font-size: 16px;
+      color: #a1a1aa;
+      line-height: 1.8;
+      margin-bottom: 30px;
+      max-width: 700px;
+    }
+    .overflow-explain b { color: #c084fc; }
+
+    .bits-container {
+      background: linear-gradient(135deg, #111118, #0e0e14);
+      border-radius: 20px;
+      padding: 36px 32px;
+      border: 1px solid #27272a;
+      box-shadow: 0 8px 40px #00000030;
+    }
+    .bit-label {
+      font-size: 13px;
+      color: #71717a;
+      margin-bottom: 10px;
+      font-weight: 600;
+      text-align: center;
+    }
+    .bit-label span {
+      background: linear-gradient(135deg, #c084fc, #22d3ee);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      font-weight: 800;
+    }
+    .bit-row {
+      display: flex;
+      justify-content: center;
+      gap: 4px;
+      margin: 8px 0;
+    }
+    .bit {
+      width: 24px;
+      height: 30px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: 'Courier New', monospace;
+      font-size: 12px;
+      font-weight: 700;
+      border-radius: 5px;
+    }
+    .bit.on {
+      background: linear-gradient(180deg, #8b5cf630, #8b5cf610);
+      color: #c084fc;
+      border: 1px solid #8b5cf640;
+      box-shadow: 0 0 8px #8b5cf618;
+    }
+    .bit.off {
+      background: #111114;
+      color: #3f3f46;
+      border: 1px solid #27272a;
+    }
+    .bit.sign-ok {
+      background: linear-gradient(180deg, #22c55e30, #22c55e10);
+      color: #4ade80;
+      border: 1px solid #22c55e40;
+      box-shadow: 0 0 8px #22c55e18;
+    }
+    .bit.sign-bad {
+      background: linear-gradient(180deg, #ef444438, #ef444415);
+      color: #fca5a5;
+      border: 1px solid #ef444445;
+      box-shadow: 0 0 10px #ef444425;
+    }
+    .overflow-arrow {
+      text-align: center;
+      font-size: 28px;
+      font-weight: 800;
+      color: #ef4444;
+      margin: 16px 0;
+      text-shadow: 0 0 20px #ef444440;
+    }
+    .result-tags {
+      display: flex;
+      justify-content: center;
+      gap: 16px;
+      margin-top: 20px;
+    }
+    .result-tag {
+      padding: 10px 24px;
+      border-radius: 10px;
+      font-size: 13px;
+      font-weight: 700;
+    }
+    .result-tag.ok {
+      background: #22c55e12;
+      color: #4ade80;
+      border: 1px solid #22c55e30;
+    }
+    .result-tag.bad {
+      background: #ef444415;
+      color: #fca5a5;
+      border: 1px solid #ef444430;
+    }
+
+    /* ══════════════════════════════════════════
+       SLIDE 3: 32 vs 64 BIT
+    ══════════════════════════════════════════ */
+    .vs-section {
+      display: flex;
+      gap: 20px;
+      align-items: stretch;
+      margin-top: 10px;
+    }
+    .vs-card {
+      flex: 1;
+      border-radius: 18px;
+      padding: 30px 28px;
+      position: relative;
+      overflow: hidden;
+      box-shadow: 0 8px 40px #00000025;
+    }
+    .vs-card::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 2px;
+    }
+    .vs-card.bad {
+      background: linear-gradient(180deg, #1c1012, #111114);
+      border: 1px solid #ef444418;
+    }
+    .vs-card.bad::before { background: linear-gradient(90deg, transparent, #ef4444, transparent); }
+    .vs-card.good {
+      background: linear-gradient(180deg, #0f1c14, #111114);
+      border: 1px solid #22c55e18;
+    }
+    .vs-card.good::before { background: linear-gradient(90deg, transparent, #22c55e, transparent); }
+    .vs-card .card-icon { font-size: 36px; margin-bottom: 14px; }
+    .vs-card h3 { font-size: 18px; font-weight: 700; margin-bottom: 8px; }
+    .vs-card.bad h3 { color: #f87171; }
+    .vs-card.good h3 { color: #4ade80; }
+    .vs-card .card-num {
+      font-family: 'Courier New', monospace;
+      font-size: 14px;
+      font-weight: 700;
+      margin-bottom: 12px;
+    }
+    .vs-card.bad .card-num { color: #fca5a5; }
+    .vs-card.good .card-num { color: #86efac; }
+    .vs-card p {
+      font-size: 13px;
+      color: #71717a;
+      line-height: 1.7;
+    }
+    .vs-card .lifespan {
+      margin-top: 18px;
+      background: #0a0a0f;
+      border-radius: 12px;
+      padding: 16px;
+      text-align: center;
+      border: 1px solid #1e1e22;
+    }
+    .vs-card .lifespan .time { font-size: 28px; font-weight: 800; }
+    .vs-card.bad .lifespan .time { color: #f87171; }
+    .vs-card.good .lifespan .time { color: #4ade80; }
+    .vs-card .lifespan .note { font-size: 10px; color: #52525b; margin-top: 4px; text-transform: uppercase; letter-spacing: 1px; }
+
+    .vs-divider {
+      display: flex; align-items: center; justify-content: center;
+      min-width: 50px;
+    }
+    .vs-badge {
+      background: linear-gradient(135deg, #8b5cf6, #ec4899);
+      color: #fff;
+      font-size: 14px;
+      font-weight: 800;
+      width: 44px;
+      height: 44px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 0 25px #8b5cf640;
+    }
+
+    /* ══════════════════════════════════════════
+       SLIDE 4: SNOWFLAKE
+    ══════════════════════════════════════════ */
+    .sf-intro {
+      font-size: 16px;
+      color: #a1a1aa;
+      line-height: 1.8;
+      margin-bottom: 28px;
+      max-width: 750px;
+    }
+    .sf-intro .hl { color: #22d3ee; font-weight: 700; }
+
+    .sf-visual {
+      background: linear-gradient(135deg, #0a1420, #0a0e14);
+      border-radius: 18px;
+      padding: 28px;
+      margin-bottom: 28px;
+      border: 1px solid #1e293b;
+      box-shadow: 0 8px 40px #00000025;
+    }
+    .sf-bar {
+      display: flex;
+      align-items: stretch;
+      border-radius: 12px;
+      overflow: hidden;
+      height: 60px;
+      box-shadow: 0 4px 20px #00000030;
+      margin-bottom: 16px;
+    }
+    .sf-seg {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 2px;
+    }
+    .sf-seg .bits { font-weight: 800; font-size: 18px; }
+    .sf-seg .lbl { font-size: 8px; text-transform: uppercase; letter-spacing: 1.5px; opacity: 0.75; }
+    .sf-seg.unused { background: linear-gradient(180deg, #52525b, #3f3f46); color: #d4d4d8; flex: 0.3; }
+    .sf-seg.ts { background: linear-gradient(180deg, #0891b2, #0e7490); color: #cffafe; flex: 4.1; }
+    .sf-seg.dc { background: linear-gradient(180deg, #8b5cf6, #7c3aed); color: #ede9fe; flex: 0.5; }
+    .sf-seg.wk { background: linear-gradient(180deg, #d946ef, #c026d3); color: #fae8ff; flex: 0.5; }
+    .sf-seg.sq { background: linear-gradient(180deg, #10b981, #059669); color: #d1fae5; flex: 1.2; }
+
+    .sf-desc-row {
+      display: flex;
+      gap: 8px;
+    }
+    .sf-desc-item {
+      border-radius: 10px;
+      padding: 12px 8px;
+      text-align: center;
+      font-size: 10px;
+      color: #94a3b8;
+      line-height: 1.5;
+      border: 1px solid #1e293b;
+      background: #0c1018;
+    }
+    .sf-desc-item.d1 { flex: 0.3; }
+    .sf-desc-item.d2 { flex: 4.1; border-color: #0891b220; }
+    .sf-desc-item.d3 { flex: 0.5; border-color: #8b5cf620; }
+    .sf-desc-item.d4 { flex: 0.5; border-color: #d946ef20; }
+    .sf-desc-item.d5 { flex: 1.2; border-color: #10b98120; }
+    .sf-desc-item b { display: block; font-size: 11px; margin-bottom: 2px; }
+    .sf-desc-item.d2 b { color: #22d3ee; }
+    .sf-desc-item.d3 b { color: #a78bfa; }
+    .sf-desc-item.d4 b { color: #e879f9; }
+    .sf-desc-item.d5 b { color: #34d399; }
+
+    .feat-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+    }
+    .feat-card {
+      background: linear-gradient(135deg, #111118, #0e0e14);
+      border-radius: 14px;
+      padding: 22px 20px;
+      border: 1px solid #1e1e28;
+      box-shadow: 0 4px 20px #00000015;
+      position: relative;
+      overflow: hidden;
+      display: flex;
+      gap: 14px;
+      align-items: flex-start;
+    }
+    .feat-card::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 1px;
+    }
+    .feat-card:nth-child(1)::before { background: linear-gradient(90deg, transparent, #06b6d440, transparent); }
+    .feat-card:nth-child(2)::before { background: linear-gradient(90deg, transparent, #8b5cf640, transparent); }
+    .feat-card:nth-child(3)::before { background: linear-gradient(90deg, transparent, #22c55e40, transparent); }
+    .feat-card:nth-child(4)::before { background: linear-gradient(90deg, transparent, #f59e0b40, transparent); }
+    .feat-card .feat-icon { font-size: 28px; flex-shrink: 0; }
+    .feat-card h4 { font-size: 13px; font-weight: 700; margin-bottom: 4px; }
+    .feat-card:nth-child(1) h4 { color: #22d3ee; }
+    .feat-card:nth-child(2) h4 { color: #a78bfa; }
+    .feat-card:nth-child(3) h4 { color: #4ade80; }
+    .feat-card:nth-child(4) h4 { color: #fbbf24; }
+    .feat-card p { font-size: 12px; color: #71717a; line-height: 1.5; }
+
+    /* ══════════════════════════════════════════
+       SLIDE 5: COMPARISON + TAKEAWAYS
+    ══════════════════════════════════════════ */
+    .table-wrap {
+      background: #111114;
+      border-radius: 16px;
+      overflow: hidden;
+      margin-bottom: 32px;
+      border: 1px solid #1e1e22;
+      box-shadow: 0 8px 30px #00000025;
+    }
+    .compare-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+    .compare-table th {
+      background: linear-gradient(135deg, #1e1e24, #18181b);
+      color: #a1a1aa;
+      padding: 14px 18px;
+      text-align: left;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      font-size: 10px;
+    }
+    .compare-table td {
+      padding: 12px 18px;
+      border-bottom: 1px solid #1a1a1f;
+      color: #d4d4d8;
+    }
+    .compare-table tr:nth-child(even) td { background: #0e0e12; }
+    .compare-table tr:last-child td { border-bottom: none; }
+    .y { color: #4ade80; font-weight: 700; }
+    .n { color: #f87171; font-weight: 700; }
+    .m { color: #fbbf24; font-weight: 700; }
+    .winner { background: #22c55e06 !important; }
+
+    .takeaways {
+      display: flex;
+      gap: 16px;
+    }
+    .tk {
+      flex: 1;
+      background: linear-gradient(180deg, #18181b, #111114);
+      border-radius: 16px;
+      padding: 24px 20px;
+      position: relative;
+      overflow: hidden;
+      box-shadow: 0 4px 25px #00000015;
+    }
+    .tk::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 3px;
+    }
+    .tk:nth-child(1)::before { background: linear-gradient(90deg, #8b5cf6, #ec4899); }
+    .tk:nth-child(2)::before { background: linear-gradient(90deg, #06b6d4, #8b5cf6); }
+    .tk:nth-child(3)::before { background: linear-gradient(90deg, #22c55e, #06b6d4); }
+    .tk .tk-icon { font-size: 26px; margin-bottom: 10px; }
+    .tk h4 { font-size: 14px; color: #e4e4e7; font-weight: 700; margin-bottom: 6px; }
+    .tk p { font-size: 12px; color: #71717a; line-height: 1.6; }
+
+    /* ── Keyboard hint ── */
+    .key-hint {
+      position: fixed;
+      top: 24px;
+      left: 32px;
+      z-index: 100;
+      font-size: 10px;
+      color: #3f3f46;
+      letter-spacing: 0.5px;
+    }
+    .key-hint kbd {
+      background: #18181b;
+      border: 1px solid #27272a;
+      border-radius: 4px;
+      padding: 2px 6px;
+      font-family: monospace;
+      font-size: 10px;
+      color: #71717a;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="slide-counter">
+    <span class="current" id="counterCurrent">1</span> / 5
+  </div>
+
+  <div class="key-hint">
+    <kbd>&larr;</kbd> <kbd>&rarr;</kbd> or scroll to navigate
+  </div>
+
+  <button class="nav-arrow left hidden" id="prevBtn" onclick="goTo(current-1)">&larr;</button>
+  <button class="nav-arrow right" id="nextBtn" onclick="goTo(current+1)">&rarr;</button>
+
+  <div class="dots" id="dots">
+    <button class="dot active" onclick="goTo(0)"></button>
+    <button class="dot" onclick="goTo(1)"></button>
+    <button class="dot" onclick="goTo(2)"></button>
+    <button class="dot" onclick="goTo(3)"></button>
+    <button class="dot" onclick="goTo(4)"></button>
+  </div>
+
+  <div class="slides" id="slides">
+
+    <!-- ══════ SLIDE 1: INCIDENT ══════ -->
+    <div class="slide s1">
+      <div class="slide-inner" style="text-align:center;">
+        <div class="hero-badge">System Design Case Study</div>
+        <h1 class="hero-title">Integer Overflow<br>& Snowflake IDs</h1>
+        <p class="hero-sub">Chess.com's app broke in 2017. Not a hack. Not a server crash.<br>They just played too many games.</p>
+        <div class="hero-number">2,147,483,648</div>
+        <p class="hero-desc">
+          That's <b>2^31</b> &mdash; one past the max a 32-bit signed integer can hold.<br>
+          The game ID overflowed. The app couldn't process it. <b>Instant crash.</b>
+        </p>
+        <div class="stats-row">
+          <div class="stat-pill">
+            <div class="icon">&#9823;</div>
+            <div class="val">2^31</div>
+            <div class="lbl">Max 32-bit Int</div>
+          </div>
+          <div class="stat-pill">
+            <div class="icon">&#9201;</div>
+            <div class="val">~2 hrs</div>
+            <div class="lbl">Apple Fix</div>
+          </div>
+          <div class="stat-pill">
+            <div class="icon">&#128293;</div>
+            <div class="val">#1</div>
+            <div class="lbl">Hacker News</div>
+          </div>
+          <div class="stat-pill">
+            <div class="icon">&#127760;</div>
+            <div class="val">100M+</div>
+            <div class="lbl">Users Hit</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══════ SLIDE 2: OVERFLOW VISUAL ══════ -->
+    <div class="slide s2">
+      <div class="slide-inner">
+        <div class="section-label red">What is Integer Overflow?</div>
+        <p class="overflow-explain">
+          When a number exceeds the <b>maximum value</b> its data type can store, the bits wrap around.
+          In a signed integer, the <b>sign bit flips</b> &mdash; turning a huge positive into a huge negative.
+        </p>
+        <div class="bits-container">
+          <div class="bit-label">Max value: <span>2,147,483,647</span></div>
+          <div class="bit-row">
+            <div class="bit sign-ok">0</div>
+            <div class="bit on">1</div><div class="bit on">1</div><div class="bit on">1</div><div class="bit on">1</div>
+            <div class="bit on">1</div><div class="bit on">1</div><div class="bit on">1</div><div class="bit on">1</div>
+            <div class="bit on">1</div><div class="bit on">1</div><div class="bit on">1</div><div class="bit on">1</div>
+            <div class="bit on">1</div><div class="bit on">1</div><div class="bit on">1</div><div class="bit on">1</div>
+            <div class="bit on">1</div><div class="bit on">1</div><div class="bit on">1</div><div class="bit on">1</div>
+            <div class="bit on">1</div><div class="bit on">1</div><div class="bit on">1</div><div class="bit on">1</div>
+            <div class="bit on">1</div><div class="bit on">1</div><div class="bit on">1</div><div class="bit on">1</div>
+            <div class="bit on">1</div><div class="bit on">1</div><div class="bit on">1</div>
+          </div>
+          <div class="overflow-arrow">+ 1</div>
+          <div class="bit-label">Overflowed: <span>-2,147,483,648</span></div>
+          <div class="bit-row">
+            <div class="bit sign-bad">1</div>
+            <div class="bit off">0</div><div class="bit off">0</div><div class="bit off">0</div><div class="bit off">0</div>
+            <div class="bit off">0</div><div class="bit off">0</div><div class="bit off">0</div><div class="bit off">0</div>
+            <div class="bit off">0</div><div class="bit off">0</div><div class="bit off">0</div><div class="bit off">0</div>
+            <div class="bit off">0</div><div class="bit off">0</div><div class="bit off">0</div><div class="bit off">0</div>
+            <div class="bit off">0</div><div class="bit off">0</div><div class="bit off">0</div><div class="bit off">0</div>
+            <div class="bit off">0</div><div class="bit off">0</div><div class="bit off">0</div><div class="bit off">0</div>
+            <div class="bit off">0</div><div class="bit off">0</div><div class="bit off">0</div><div class="bit off">0</div>
+            <div class="bit off">0</div><div class="bit off">0</div><div class="bit off">0</div>
+          </div>
+          <div class="result-tags">
+            <div class="result-tag ok">Sign bit 0 = Positive</div>
+            <div class="result-tag bad">Sign bit 1 = Negative = CRASH</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══════ SLIDE 3: 32 vs 64 ══════ -->
+    <div class="slide s3">
+      <div class="slide-inner">
+        <div class="section-label">The Fix: 32-bit vs 64-bit</div>
+        <div class="vs-section">
+          <div class="vs-card bad">
+            <div class="card-icon">&#128164;</div>
+            <h3>32-bit Signed Integer</h3>
+            <div class="card-num">Max: 2,147,483,647</div>
+            <p>~2.1 billion. Sounds like a lot &mdash; until your platform goes viral. Chess.com hit this wall in just a few years.</p>
+            <div class="lifespan">
+              <div class="time">~6 years</div>
+              <div class="note">at Chess.com's growth rate</div>
+            </div>
+          </div>
+          <div class="vs-divider"><div class="vs-badge">VS</div></div>
+          <div class="vs-card good">
+            <div class="card-icon">&#9889;</div>
+            <h3>64-bit Signed Integer</h3>
+            <div class="card-num">Max: 9.2 quintillion</div>
+            <p>At 1 million games per day, you'd need <b style="color:#4ade80;">25 billion years</b> to overflow. The sun dies first.</p>
+            <div class="lifespan">
+              <div class="time">25B years</div>
+              <div class="note">at 1M games/day</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══════ SLIDE 4: SNOWFLAKE ══════ -->
+    <div class="slide s4">
+      <div class="slide-inner">
+        <div class="section-label cyan">The Real Solution: Twitter's Snowflake IDs</div>
+        <p class="sf-intro">
+          64-bit fixes overflow. But in <span class="hl">distributed systems</span>, you also need IDs that are
+          <span class="hl">globally unique</span>, <span class="hl">time-sortable</span>, and generated
+          <span class="hl">without coordination</span>. Snowflake does it all in one 64-bit integer.
+        </p>
+        <div class="sf-visual">
+          <div class="sf-bar">
+            <div class="sf-seg unused"><div class="bits">1</div><div class="lbl">Sign</div></div>
+            <div class="sf-seg ts"><div class="bits">41 bits</div><div class="lbl">Timestamp</div></div>
+            <div class="sf-seg dc"><div class="bits">5</div><div class="lbl">DC</div></div>
+            <div class="sf-seg wk"><div class="bits">5</div><div class="lbl">Worker</div></div>
+            <div class="sf-seg sq"><div class="bits">12 bits</div><div class="lbl">Sequence</div></div>
+          </div>
+          <div class="sf-desc-row">
+            <div class="sf-desc-item d1"><b>0</b>Always positive</div>
+            <div class="sf-desc-item d2"><b>Milliseconds since epoch</b>69 years of runway</div>
+            <div class="sf-desc-item d3"><b>32 DCs</b>Data center ID</div>
+            <div class="sf-desc-item d4"><b>32 Workers</b>Machine ID</div>
+            <div class="sf-desc-item d5"><b>4,096/ms</b>Sequence counter</div>
+          </div>
+        </div>
+        <div class="feat-grid">
+          <div class="feat-card">
+            <div class="feat-icon">&#128268;</div>
+            <div>
+              <h4>No Coordination</h4>
+              <p>Each machine generates IDs independently. No central bottleneck.</p>
+            </div>
+          </div>
+          <div class="feat-card">
+            <div class="feat-icon">&#128336;</div>
+            <div>
+              <h4>Time-Sortable</h4>
+              <p>Timestamp in MSBs. IDs sort chronologically by default.</p>
+            </div>
+          </div>
+          <div class="feat-card">
+            <div class="feat-icon">&#128640;</div>
+            <div>
+              <h4>4,096 IDs/ms/Worker</h4>
+              <p>~4M IDs per second per machine. Built for scale.</p>
+            </div>
+          </div>
+          <div class="feat-card">
+            <div class="feat-icon">&#128737;</div>
+            <div>
+              <h4>69 Years Runway</h4>
+              <p>41-bit timestamp from custom epoch. Reset when needed.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══════ SLIDE 5: COMPARISON + TAKEAWAYS ══════ -->
+    <div class="slide s5">
+      <div class="slide-inner">
+        <div class="section-label green">ID Strategy Comparison</div>
+        <div class="table-wrap">
+          <table class="compare-table">
+            <tr>
+              <th>Feature</th>
+              <th>Auto-Increment</th>
+              <th>UUID (128-bit)</th>
+              <th>Snowflake ID</th>
+            </tr>
+            <tr>
+              <td>Globally Unique</td>
+              <td class="n">No (single DB)</td>
+              <td class="y">Yes</td>
+              <td class="y winner">Yes</td>
+            </tr>
+            <tr>
+              <td>Time-Sortable</td>
+              <td class="m">Insert order</td>
+              <td class="n">No (random)</td>
+              <td class="y winner">Yes (by design)</td>
+            </tr>
+            <tr>
+              <td>Size</td>
+              <td class="y">32/64 bit</td>
+              <td class="n">128 bit</td>
+              <td class="y winner">64 bit</td>
+            </tr>
+            <tr>
+              <td>Distributed</td>
+              <td class="n">Needs coordination</td>
+              <td class="y">Yes</td>
+              <td class="y winner">Yes</td>
+            </tr>
+            <tr>
+              <td>Index Performance</td>
+              <td class="y">Great</td>
+              <td class="n">Poor (random)</td>
+              <td class="y winner">Great (sequential)</td>
+            </tr>
+            <tr>
+              <td>Overflow Risk</td>
+              <td class="n">32-bit: High</td>
+              <td class="y">Practically none</td>
+              <td class="y winner">69 years</td>
+            </tr>
+          </table>
+        </div>
+
+        <div class="section-label green">Key Takeaways</div>
+        <div class="takeaways">
+          <div class="tk">
+            <div class="tk-icon">&#128683;</div>
+            <h4>Never Use 32-bit for IDs</h4>
+            <p>2 billion feels far until it isn't. Default to 64-bit. Always.</p>
+          </div>
+          <div class="tk">
+            <div class="tk-icon">&#128505;</div>
+            <h4>IDs Are Infrastructure</h4>
+            <p>Your ID scheme affects sharding, sorting, indexing, and coordination.</p>
+          </div>
+          <div class="tk">
+            <div class="tk-icon">&#10052;</div>
+            <h4>Snowflake for Scale</h4>
+            <p>Uniqueness + ordering + compactness in 64 bits. Battle-tested.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <script>
+    let current = 0;
+    const total = 5;
+    const slidesEl = document.getElementById('slides');
+    const dots = document.querySelectorAll('.dot');
+    const prevBtn = document.getElementById('prevBtn');
+    const nextBtn = document.getElementById('nextBtn');
+    const counter = document.getElementById('counterCurrent');
+
+    function goTo(n) {
+      if (n < 0 || n >= total) return;
+      current = n;
+      slidesEl.style.transform = `translateX(-${current * 100}vw)`;
+      dots.forEach((d, i) => d.classList.toggle('active', i === current));
+      prevBtn.classList.toggle('hidden', current === 0);
+      nextBtn.classList.toggle('hidden', current === total - 1);
+      counter.textContent = current + 1;
+    }
+
+    // Keyboard
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'ArrowRight' || e.key === 'ArrowDown') goTo(current + 1);
+      if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') goTo(current - 1);
+    });
+
+    // Scroll / Swipe
+    let scrollTimeout;
+    document.addEventListener('wheel', (e) => {
+      clearTimeout(scrollTimeout);
+      scrollTimeout = setTimeout(() => {
+        if (e.deltaY > 0 || e.deltaX > 0) goTo(current + 1);
+        else goTo(current - 1);
+      }, 50);
+    }, { passive: true });
+
+    // Touch swipe
+    let touchStartX = 0;
+    document.addEventListener('touchstart', (e) => { touchStartX = e.touches[0].clientX; });
+    document.addEventListener('touchend', (e) => {
+      const diff = touchStartX - e.changedTouches[0].clientX;
+      if (Math.abs(diff) > 50) {
+        if (diff > 0) goTo(current + 1);
+        else goTo(current - 1);
+      }
+    });
+  </script>
+
+    <script>
+        if (new URLSearchParams(window.location.search).has('print')) {
+            const s = document.createElement('style');
+            s.textContent = `
+                .slides { display:flex!important; flex-direction:column!important; transform:none!important; transition:none!important; width:100%!important; }
+                .slide { min-width:100%!important; width:100%!important; position:relative!important; transform:none!important; flex-shrink:0!important; page-break-after:always; }
+                .dots, .arrow, .slide-counter, .glow { display:none!important; }
+                body { overflow:visible!important; height:auto!important; }
+                .slider { overflow:visible!important; height:auto!important; }
+                @media print {
+                    * { -webkit-print-color-adjust:exact!important; print-color-adjust:exact!important; }
+                    body { background:#09090b!important; }
+                }
+            `;
+            document.head.appendChild(s);
+            window.addEventListener('load', () => setTimeout(() => window.print(), 500));
+        }
+    </script>
+
+</body>
+</html>
