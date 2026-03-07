@@ -1,0 +1,422 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Race Condition & Cascading Failure — AWS DynamoDB Outage 2025</title>
+  <style>
+    @page { size: A4; margin: 0; }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      background: #0a0a0f;
+      color: #e4e4e7;
+      width: 210mm;
+      min-height: 297mm;
+      margin: 0 auto;
+      padding: 36px 40px;
+    }
+
+    /* ── Header ── */
+    .header {
+      text-align: center;
+      margin-bottom: 24px;
+      padding-bottom: 16px;
+      border-bottom: 2px solid #f59e0b;
+    }
+    .header .label {
+      display: inline-block;
+      background: #f59e0b;
+      color: #0a0a0f;
+      font-size: 9px;
+      font-weight: 800;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      padding: 3px 12px;
+      border-radius: 3px;
+      margin-bottom: 10px;
+    }
+    .header h1 {
+      font-size: 22px;
+      font-weight: 800;
+      background: linear-gradient(135deg, #f59e0b, #ef4444);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      line-height: 1.3;
+    }
+    .header .sub {
+      font-size: 12px;
+      color: #71717a;
+      margin-top: 4px;
+    }
+
+    /* ── Incident Strip ── */
+    .incident-strip {
+      display: flex;
+      gap: 12px;
+      margin-bottom: 22px;
+    }
+    .stat-card {
+      flex: 1;
+      background: #18181b;
+      border-radius: 8px;
+      padding: 14px;
+      text-align: center;
+      border: 1px solid #27272a;
+    }
+    .stat-card .num {
+      font-size: 22px;
+      font-weight: 800;
+      color: #f59e0b;
+    }
+    .stat-card .desc {
+      font-size: 10px;
+      color: #a1a1aa;
+      margin-top: 2px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    /* ── Section Title ── */
+    .section-title {
+      font-size: 13px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 1.5px;
+      margin-bottom: 12px;
+      padding-left: 10px;
+      border-left: 3px solid #f59e0b;
+    }
+
+    /* ── What is a Race Condition ── */
+    .concept-box {
+      background: #18181b;
+      border-radius: 10px;
+      padding: 18px 20px;
+      margin-bottom: 20px;
+      border: 1px solid #27272a;
+    }
+    .concept-box p {
+      font-size: 12px;
+      line-height: 1.7;
+      color: #d4d4d8;
+    }
+    .concept-box .highlight {
+      color: #f59e0b;
+      font-weight: 700;
+    }
+
+    .race-visual {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      margin: 14px 0 6px;
+      font-family: 'Courier New', monospace;
+      font-size: 11px;
+    }
+    .race-box {
+      padding: 8px 14px;
+      border-radius: 6px;
+      text-align: center;
+      line-height: 1.4;
+    }
+    .race-box.a { background: #1e1b4b; border: 1px solid #6366f1; color: #a5b4fc; }
+    .race-box.b { background: #1a0a0a; border: 1px solid #ef4444; color: #fca5a5; }
+    .race-box.shared { background: #1c1917; border: 1px solid #f59e0b; color: #fcd34d; }
+    .race-arrow { color: #52525b; font-size: 16px; }
+
+    /* ── What Happened ── */
+    .timeline {
+      position: relative;
+      padding-left: 20px;
+      margin-bottom: 20px;
+    }
+    .timeline::before {
+      content: '';
+      position: absolute;
+      left: 5px;
+      top: 0;
+      bottom: 0;
+      width: 2px;
+      background: linear-gradient(180deg, #f59e0b, #ef4444);
+      border-radius: 2px;
+    }
+    .timeline-step {
+      position: relative;
+      margin-bottom: 10px;
+      padding-left: 16px;
+    }
+    .timeline-step::before {
+      content: '';
+      position: absolute;
+      left: -19px;
+      top: 5px;
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: #f59e0b;
+      border: 2px solid #0a0a0f;
+    }
+    .timeline-step:last-child::before { background: #ef4444; }
+    .timeline-step .step-title {
+      font-size: 11px;
+      font-weight: 700;
+      color: #fbbf24;
+      margin-bottom: 2px;
+    }
+    .timeline-step .step-desc {
+      font-size: 11px;
+      color: #a1a1aa;
+      line-height: 1.5;
+    }
+
+    /* ── Cascade Diagram ── */
+    .cascade {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+      margin: 14px 0 20px;
+      flex-wrap: wrap;
+    }
+    .cascade-node {
+      padding: 8px 12px;
+      border-radius: 6px;
+      font-size: 10px;
+      font-weight: 700;
+      text-align: center;
+      min-width: 70px;
+    }
+    .cascade-node.origin { background: #ef444430; color: #fca5a5; border: 1px solid #ef4444; }
+    .cascade-node.l1 { background: #f59e0b20; color: #fcd34d; border: 1px solid #f59e0b60; }
+    .cascade-node.l2 { background: #6366f120; color: #a5b4fc; border: 1px solid #6366f160; }
+    .cascade-arrow { color: #52525b; font-size: 14px; font-weight: bold; }
+
+    /* ── Two Column Layout ── */
+    .two-col {
+      display: flex;
+      gap: 14px;
+      margin-bottom: 20px;
+    }
+    .col {
+      flex: 1;
+    }
+
+    /* ── Why it couldn't self-recover ── */
+    .meta-box {
+      background: linear-gradient(135deg, #1a0a0a, #18181b);
+      border: 1px solid #ef444440;
+      border-radius: 10px;
+      padding: 16px 18px;
+      margin-bottom: 20px;
+    }
+    .meta-box h3 {
+      font-size: 12px;
+      font-weight: 700;
+      color: #fca5a5;
+      margin-bottom: 8px;
+    }
+    .meta-box p {
+      font-size: 11px;
+      color: #a1a1aa;
+      line-height: 1.6;
+    }
+    .meta-box .em { color: #ef4444; font-weight: 600; }
+
+    /* ── Takeaways ── */
+    .takeaways {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      margin-bottom: 16px;
+    }
+    .takeaway-card {
+      background: #18181b;
+      border-radius: 8px;
+      padding: 14px 16px;
+      border-left: 3px solid #22c55e;
+    }
+    .takeaway-card h4 {
+      font-size: 11px;
+      color: #4ade80;
+      font-weight: 700;
+      margin-bottom: 4px;
+    }
+    .takeaway-card p {
+      font-size: 10.5px;
+      color: #a1a1aa;
+      line-height: 1.5;
+    }
+
+    /* ── Footer ── */
+    .footer {
+      text-align: center;
+      padding-top: 12px;
+      border-top: 1px solid #27272a;
+      font-size: 10px;
+      color: #52525b;
+    }
+    .footer span { color: #f59e0b; font-weight: 600; }
+  </style>
+</head>
+<body>
+
+  <div class="header">
+    <div class="label">System Design Case Study</div>
+    <h1>Race Condition & Cascading Failure</h1>
+    <div class="sub">AWS DynamoDB Outage &mdash; October 2025</div>
+  </div>
+
+  <!-- Stats -->
+  <div class="incident-strip">
+    <div class="stat-card">
+      <div class="num">15h</div>
+      <div class="desc">Total Downtime</div>
+    </div>
+    <div class="stat-card">
+      <div class="num">17M</div>
+      <div class="desc">Outage Reports</div>
+    </div>
+    <div class="stat-card">
+      <div class="num">$581M</div>
+      <div class="desc">Estimated Damages</div>
+    </div>
+    <div class="stat-card">
+      <div class="num">6+</div>
+      <div class="desc">AWS Services Hit</div>
+    </div>
+  </div>
+
+  <!-- What is a Race Condition -->
+  <div class="section-title">What is a Race Condition?</div>
+  <div class="concept-box">
+    <p>
+      A <span class="highlight">race condition</span> occurs when two or more processes access
+      <span class="highlight">shared data concurrently</span>, and the final outcome depends on
+      the <span class="highlight">timing of execution</span> &mdash; not the logic.
+      If Process A and Process B both read and write to the same resource without synchronization,
+      the &ldquo;winner&rdquo; of the race determines the system&rsquo;s state &mdash; often incorrectly.
+    </p>
+    <div class="race-visual">
+      <div class="race-box a">Process A<br><small>Planner</small></div>
+      <span class="race-arrow">&rarr;</span>
+      <div class="race-box shared">Shared DNS<br>Record</div>
+      <span class="race-arrow">&larr;</span>
+      <div class="race-box b">Process B<br><small>Enactor</small></div>
+    </div>
+    <p style="text-align: center; font-size: 10px; color: #71717a; margin-top: 6px;">
+      Both processes raced to update the same DNS record. The wrong one won.
+    </p>
+  </div>
+
+  <div class="two-col">
+    <div class="col">
+      <!-- What Happened -->
+      <div class="section-title">What Happened at AWS</div>
+      <div class="timeline">
+        <div class="timeline-step">
+          <div class="step-title">Enactor starts processing</div>
+          <div class="step-desc">Checks if its DNS plan is fresh. It is &mdash; at this moment.</div>
+        </div>
+        <div class="timeline-step">
+          <div class="step-title">Planner creates a new plan</div>
+          <div class="step-desc">While Enactor is still running, Planner pushes a newer config.</div>
+        </div>
+        <div class="timeline-step">
+          <div class="step-title">Enactor finishes late</div>
+          <div class="step-desc">Overwrites the newer plan with its now-stale version.</div>
+        </div>
+        <div class="timeline-step">
+          <div class="step-title">Cleanup runs</div>
+          <div class="step-desc">Sees the stale entry, treats the valid record as garbage, and deletes it.</div>
+        </div>
+        <div class="timeline-step">
+          <div class="step-title">DynamoDB DNS goes dark</div>
+          <div class="step-desc">No service in US-EAST-1 can resolve DynamoDB. The cascade begins.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col">
+      <!-- Cascading Failure -->
+      <div class="section-title">The Cascade</div>
+      <div class="concept-box" style="margin-bottom: 14px;">
+        <p>
+          A <span class="highlight">cascading failure</span> is when one component&rsquo;s failure
+          triggers failures in dependent components, which trigger more failures &mdash; like dominoes.
+          It happens when there is <span class="highlight">no failure isolation</span> between services.
+        </p>
+      </div>
+      <div class="cascade">
+        <div class="cascade-node origin">DynamoDB<br>DNS deleted</div>
+        <span class="cascade-arrow">&rarr;</span>
+        <div class="cascade-node l1">EC2<br>can't launch</div>
+        <span class="cascade-arrow">&rarr;</span>
+        <div class="cascade-node l2">Lambda<br>invocations fail</div>
+      </div>
+      <div class="cascade">
+        <div class="cascade-node origin">DynamoDB<br>DNS deleted</div>
+        <span class="cascade-arrow">&rarr;</span>
+        <div class="cascade-node l1">NLB<br>health checks fail</div>
+        <span class="cascade-arrow">&rarr;</span>
+        <div class="cascade-node l2">ECS / EKS<br>tasks crash</div>
+      </div>
+      <div style="text-align:center; margin-top: 10px;">
+        <span style="font-size: 10px; color: #71717a;">Slack, Snapchat, Reddit, Roblox, Venmo &mdash; all collateral damage</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Metastable Failure -->
+  <div class="meta-box">
+    <h3>Why It Couldn&rsquo;t Self-Recover: Metastable Failure</h3>
+    <p>
+      Even after DNS was restored in ~2.5 hours, the region <span class="em">didn&rsquo;t recover</span>.
+      The system entered a <span class="em">metastable failure state</span> &mdash; technically running,
+      but stuck in a broken loop. Retry storms from millions of clients overwhelmed recovering services,
+      preventing them from catching up. Engineers had to <span class="em">manually intervene</span>
+      to break the cycle. Total recovery took 15 hours.
+    </p>
+  </div>
+
+  <!-- Takeaways -->
+  <div class="section-title" style="border-left-color: #22c55e;">Design Takeaways</div>
+  <div class="takeaways">
+    <div class="takeaway-card">
+      <h4>Validate at Point of Action</h4>
+      <p>Never trust a stale check. Re-validate shared state right before writing &mdash; not minutes earlier.</p>
+    </div>
+    <div class="takeaway-card">
+      <h4>Guard Automated Cleanup</h4>
+      <p>Deletion scripts are loaded guns. Add confirmation checks, soft-deletes, and cooldown windows.</p>
+    </div>
+    <div class="takeaway-card">
+      <h4>Isolate Failure Domains</h4>
+      <p>If one service dying kills everything downstream, you have a monolith disguised as microservices.</p>
+    </div>
+    <div class="takeaway-card">
+      <h4>Design for Metastability</h4>
+      <p>Plan for retry storms. Use backoff, circuit breakers, and load shedding so recovery is possible.</p>
+    </div>
+  </div>
+
+  <div class="footer">
+    <span>System Design for Dummies</span> &mdash; Learn from real-world failures, not just textbooks
+  </div>
+
+    <script>
+        if (new URLSearchParams(window.location.search).has('print')) {
+            const s = document.createElement('style');
+            s.textContent = `
+                @media print {
+                    * { -webkit-print-color-adjust:exact!important; print-color-adjust:exact!important; }
+                    body { background:#0a0a0f!important; }
+                }
+            `;
+            document.head.appendChild(s);
+            window.addEventListener('load', () => setTimeout(() => window.print(), 500));
+        }
+    </script>
+
+</body>
+</html>
