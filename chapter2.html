@@ -1,0 +1,1241 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ch 2: Integer Overflow & Snowflake IDs — System Design for Dummies</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧠</text></svg>">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        :root {
+            --bg: #0f172a;
+            --bg-card: #1e293b;
+            --bg-code: #0d1117;
+            --text: #f8fafc;
+            --text-muted: #94a3b8;
+            --text-dim: #64748b;
+            --border: #334155;
+            --blue: #3b82f6;
+            --green: #10b981;
+            --orange: #f59e0b;
+            --purple: #8b5cf6;
+            --pink: #ec4899;
+            --red: #ef4444;
+            --cyan: #06b6d4;
+            --indigo: #6366f1;
+        }
+
+        html { scroll-behavior: smooth; scrollbar-width: thin; scrollbar-color: var(--border) var(--bg); }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            line-height: 1.6;
+            overflow-x: hidden;
+        }
+
+        /* ===== NAV ===== */
+        nav {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            z-index: 100;
+            background: rgba(15, 23, 42, 0.85);
+            backdrop-filter: blur(20px);
+            border-bottom: 1px solid rgba(51, 65, 85, 0.5);
+        }
+
+        .nav-inner {
+            max-width: 1100px;
+            margin: 0 auto;
+            padding: 0.65rem 2rem;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .nav-left {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+
+        .nav-logo {
+            display: flex;
+            align-items: center;
+            gap: 0.6rem;
+            font-weight: 800;
+            font-size: 0.95rem;
+            text-decoration: none;
+            color: var(--text);
+            letter-spacing: -0.5px;
+        }
+
+        .nav-logo-icon {
+            width: 28px;
+            height: 28px;
+            border-radius: 7px;
+            background: linear-gradient(135deg, var(--blue), var(--purple));
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.65rem;
+            font-weight: 900;
+            color: white;
+        }
+
+        .nav-logo span {
+            background: linear-gradient(135deg, var(--blue), var(--purple));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .nav-sep {
+            width: 1px;
+            height: 18px;
+            background: var(--border);
+        }
+
+        .nav-chapter-badge {
+            display: flex;
+            align-items: center;
+            gap: 0.4rem;
+            font-size: 0.72rem;
+            font-weight: 600;
+            color: var(--purple);
+            background: rgba(139, 92, 246, 0.08);
+            border: 1px solid rgba(139, 92, 246, 0.15);
+            padding: 0.2rem 0.7rem;
+            border-radius: 50px;
+        }
+
+        .nav-chapter-badge .dot {
+            width: 5px; height: 5px; border-radius: 50%;
+            background: var(--purple);
+        }
+
+        .nav-center {
+            display: flex;
+            gap: 0.25rem;
+        }
+
+        .nav-center a {
+            color: var(--text-muted);
+            text-decoration: none;
+            font-size: 0.78rem;
+            font-weight: 500;
+            padding: 0.35rem 0.7rem;
+            border-radius: 6px;
+            transition: all 0.2s;
+        }
+
+        .nav-center a:hover {
+            color: var(--text);
+            background: rgba(139, 92, 246, 0.1);
+        }
+
+        .nav-right {
+            display: flex;
+            align-items: center;
+            gap: 0.6rem;
+        }
+
+        .nav-counter {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.72rem;
+            color: var(--text-dim);
+            background: var(--bg-card);
+            padding: 0.25rem 0.6rem;
+            border-radius: 20px;
+            border: 1px solid var(--border);
+        }
+
+        /* ===== SIDEBAR DOTS ===== */
+        .sidebar {
+            position: fixed;
+            left: 1.2rem;
+            top: 50%;
+            transform: translateY(-50%);
+            z-index: 50;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .sidebar a {
+            width: 8px; height: 8px; border-radius: 50%;
+            background: var(--border);
+            transition: all 0.3s;
+            display: block;
+            position: relative;
+        }
+
+        .sidebar a:hover { background: var(--text-muted); transform: scale(1.5); }
+
+        .sidebar a.active {
+            background: var(--purple);
+            box-shadow: 0 0 8px rgba(139, 92, 246, 0.5);
+            transform: scale(1.5);
+        }
+
+        .sidebar a .tooltip {
+            position: absolute;
+            left: 18px;
+            top: 50%;
+            transform: translateY(-50%);
+            background: var(--bg-card);
+            color: var(--text);
+            padding: 0.3rem 0.7rem;
+            border-radius: 6px;
+            font-size: 0.65rem;
+            white-space: nowrap;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.2s;
+            border: 1px solid var(--border);
+        }
+
+        .sidebar a:hover .tooltip { opacity: 1; }
+
+        /* ===== CHAPTER HERO ===== */
+        .chapter-hero {
+            padding: 8rem 2rem 4rem;
+            text-align: center;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .chapter-hero-bg {
+            position: absolute;
+            inset: 0;
+            background:
+                radial-gradient(ellipse at 30% 50%, rgba(139,92,246,0.1) 0%, transparent 60%),
+                radial-gradient(ellipse at 70% 30%, rgba(236,72,153,0.08) 0%, transparent 50%);
+        }
+
+        .chapter-hero-content {
+            position: relative;
+            max-width: 700px;
+            margin: 0 auto;
+        }
+
+        .chapter-label {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            color: var(--purple);
+            margin-bottom: 1.2rem;
+        }
+
+        .chapter-label .ch-dot {
+            width: 8px; height: 8px; border-radius: 50%;
+            background: var(--purple);
+        }
+
+        .chapter-hero h1 {
+            font-size: clamp(2rem, 5vw, 3rem);
+            font-weight: 900;
+            letter-spacing: -1.5px;
+            line-height: 1.15;
+            margin-bottom: 0.8rem;
+        }
+
+        .chapter-hero h1 .gradient {
+            background: linear-gradient(135deg, var(--purple), var(--pink));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .chapter-hero-content > p {
+            color: var(--text-muted);
+            font-size: 1.05rem;
+            max-width: 500px;
+            margin: 0 auto;
+            line-height: 1.7;
+        }
+
+        .chapter-tags {
+            display: flex;
+            justify-content: center;
+            gap: 0.5rem;
+            flex-wrap: wrap;
+            margin-top: 1.8rem;
+        }
+
+        .chapter-tag {
+            padding: 0.3rem 0.85rem;
+            border-radius: 50px;
+            font-size: 0.7rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        /* ===== SECTIONS ===== */
+        .content-section {
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 2rem 2rem 4rem;
+        }
+
+        .section-block {
+            position: relative;
+            margin-bottom: 4rem;
+            opacity: 0;
+            transform: translateY(30px);
+            transition: all 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        .section-block.visible { opacity: 1; transform: translateY(0); }
+
+        .section-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            overflow: hidden;
+        }
+
+        .section-header {
+            padding: 1.5rem 2rem 1rem;
+            display: flex;
+            align-items: flex-start;
+            gap: 1rem;
+        }
+
+        .section-icon {
+            width: 44px;
+            height: 44px;
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.2rem;
+            flex-shrink: 0;
+        }
+
+        .section-header-text h2 {
+            font-size: 1.3rem;
+            font-weight: 800;
+            letter-spacing: -0.5px;
+            margin-bottom: 0.2rem;
+        }
+
+        .section-header-text .subtitle {
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            line-height: 1.6;
+        }
+
+        .section-body {
+            padding: 0.5rem 2rem 2rem;
+        }
+
+        .section-body p {
+            color: var(--text-muted);
+            font-size: 0.92rem;
+            line-height: 1.8;
+            margin-bottom: 1.2rem;
+        }
+
+        .section-body p b { color: var(--text); }
+
+        /* ── Incident Hero ── */
+        .incident-hero {
+            background: linear-gradient(135deg, rgba(139,92,246,0.08), rgba(236,72,153,0.05));
+            border: 1px solid rgba(139,92,246,0.15);
+            border-radius: 14px;
+            padding: 2rem;
+            text-align: center;
+            margin-bottom: 1.5rem;
+        }
+
+        .incident-hero .big-number {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 2.5rem;
+            font-weight: 800;
+            background: linear-gradient(135deg, var(--pink), var(--orange));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin: 0.8rem 0;
+            line-height: 1.2;
+        }
+
+        .stats-row {
+            display: flex;
+            gap: 1rem;
+            margin: 1.5rem 0;
+        }
+
+        .stat-pill {
+            flex: 1;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 1rem;
+            text-align: center;
+        }
+
+        .stat-pill .icon { font-size: 1.3rem; margin-bottom: 0.4rem; }
+
+        .stat-pill .val {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 1.3rem;
+            font-weight: 800;
+            background: linear-gradient(135deg, var(--purple), var(--pink));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .stat-pill .lbl {
+            font-size: 0.65rem;
+            color: var(--text-dim);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-top: 0.2rem;
+        }
+
+        /* ── Bit Visualization ── */
+        .bits-container {
+            background: var(--bg-code);
+            border-radius: 14px;
+            padding: 2rem 1.5rem;
+            border: 1px solid var(--border);
+            margin-bottom: 1.5rem;
+        }
+
+        .bit-label {
+            font-size: 0.85rem;
+            color: var(--text-dim);
+            margin-bottom: 0.6rem;
+            font-weight: 600;
+            text-align: center;
+        }
+
+        .bit-label span {
+            background: linear-gradient(135deg, var(--purple), var(--cyan));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            font-weight: 800;
+        }
+
+        .bit-row {
+            display: flex;
+            justify-content: center;
+            gap: 3px;
+            margin: 0.5rem 0;
+        }
+
+        .bit {
+            width: 22px;
+            height: 28px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.7rem;
+            font-weight: 700;
+            border-radius: 4px;
+        }
+
+        .bit.on {
+            background: rgba(139, 92, 246, 0.15);
+            color: #c084fc;
+            border: 1px solid rgba(139, 92, 246, 0.3);
+        }
+
+        .bit.off {
+            background: rgba(51, 65, 85, 0.3);
+            color: var(--text-dim);
+            border: 1px solid var(--border);
+        }
+
+        .bit.sign-ok {
+            background: rgba(16, 185, 129, 0.15);
+            color: var(--green);
+            border: 1px solid rgba(16, 185, 129, 0.3);
+        }
+
+        .bit.sign-bad {
+            background: rgba(239, 68, 68, 0.15);
+            color: #fca5a5;
+            border: 1px solid rgba(239, 68, 68, 0.3);
+        }
+
+        .overflow-arrow {
+            text-align: center;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 1.2rem;
+            font-weight: 800;
+            color: var(--red);
+            margin: 0.8rem 0;
+        }
+
+        .result-tags {
+            display: flex;
+            justify-content: center;
+            gap: 1rem;
+            margin-top: 1rem;
+        }
+
+        .result-tag {
+            padding: 0.5rem 1.2rem;
+            border-radius: 8px;
+            font-size: 0.78rem;
+            font-weight: 600;
+        }
+
+        .result-tag.ok {
+            background: rgba(16, 185, 129, 0.1);
+            color: var(--green);
+            border: 1px solid rgba(16, 185, 129, 0.2);
+        }
+
+        .result-tag.bad {
+            background: rgba(239, 68, 68, 0.1);
+            color: #fca5a5;
+            border: 1px solid rgba(239, 68, 68, 0.2);
+        }
+
+        /* ── VS Cards ── */
+        .vs-section {
+            display: flex;
+            gap: 1rem;
+            margin: 1.5rem 0;
+            align-items: stretch;
+        }
+
+        .vs-card {
+            flex: 1;
+            border-radius: 14px;
+            padding: 1.5rem;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .vs-card::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; right: 0;
+            height: 2px;
+        }
+
+        .vs-card.bad {
+            background: rgba(239, 68, 68, 0.04);
+            border: 1px solid rgba(239, 68, 68, 0.12);
+        }
+        .vs-card.bad::before { background: linear-gradient(90deg, transparent, var(--red), transparent); }
+
+        .vs-card.good {
+            background: rgba(16, 185, 129, 0.04);
+            border: 1px solid rgba(16, 185, 129, 0.12);
+        }
+        .vs-card.good::before { background: linear-gradient(90deg, transparent, var(--green), transparent); }
+
+        .vs-card .card-icon { font-size: 1.8rem; margin-bottom: 0.8rem; }
+        .vs-card h3 { font-size: 1.1rem; font-weight: 700; margin-bottom: 0.4rem; }
+        .vs-card.bad h3 { color: #fca5a5; }
+        .vs-card.good h3 { color: #6ee7b7; }
+
+        .vs-card .card-num {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.82rem;
+            font-weight: 600;
+            margin-bottom: 0.6rem;
+        }
+        .vs-card.bad .card-num { color: #fca5a5; }
+        .vs-card.good .card-num { color: #6ee7b7; }
+
+        .vs-card p {
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            line-height: 1.7;
+        }
+
+        .vs-card .lifespan {
+            margin-top: 1rem;
+            background: var(--bg-code);
+            border-radius: 10px;
+            padding: 1rem;
+            text-align: center;
+            border: 1px solid var(--border);
+        }
+
+        .vs-card .lifespan .time {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 1.5rem;
+            font-weight: 800;
+        }
+        .vs-card.bad .lifespan .time { color: #fca5a5; }
+        .vs-card.good .lifespan .time { color: #6ee7b7; }
+
+        .vs-card .lifespan .note {
+            font-size: 0.65rem;
+            color: var(--text-dim);
+            margin-top: 0.2rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .vs-divider {
+            display: flex; align-items: center; justify-content: center;
+            min-width: 40px;
+        }
+
+        .vs-badge {
+            background: linear-gradient(135deg, var(--purple), var(--pink));
+            color: white;
+            font-size: 0.75rem;
+            font-weight: 800;
+            width: 36px; height: 36px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 0 20px rgba(139, 92, 246, 0.3);
+        }
+
+        /* ── Snowflake Diagram ── */
+        .sf-visual {
+            background: var(--bg-code);
+            border-radius: 14px;
+            padding: 1.5rem;
+            margin: 1.5rem 0;
+            border: 1px solid var(--border);
+        }
+
+        .sf-bar {
+            display: flex;
+            align-items: stretch;
+            border-radius: 10px;
+            overflow: hidden;
+            height: 50px;
+            margin-bottom: 0.8rem;
+        }
+
+        .sf-seg {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 1px;
+        }
+
+        .sf-seg .bits {
+            font-family: 'JetBrains Mono', monospace;
+            font-weight: 800;
+            font-size: 0.95rem;
+        }
+
+        .sf-seg .lbl { font-size: 0.55rem; text-transform: uppercase; letter-spacing: 1px; opacity: 0.8; }
+        .sf-seg.unused { background: linear-gradient(180deg, #52525b, #3f3f46); color: #d4d4d8; flex: 0.3; }
+        .sf-seg.ts { background: linear-gradient(180deg, #0891b2, #0e7490); color: #cffafe; flex: 4.1; }
+        .sf-seg.dc { background: linear-gradient(180deg, #8b5cf6, #7c3aed); color: #ede9fe; flex: 0.5; }
+        .sf-seg.wk { background: linear-gradient(180deg, #d946ef, #c026d3); color: #fae8ff; flex: 0.5; }
+        .sf-seg.sq { background: linear-gradient(180deg, #10b981, #059669); color: #d1fae5; flex: 1.2; }
+
+        .sf-desc-row {
+            display: flex;
+            gap: 6px;
+        }
+
+        .sf-desc-item {
+            border-radius: 8px;
+            padding: 0.6rem 0.5rem;
+            text-align: center;
+            font-size: 0.65rem;
+            color: var(--text-muted);
+            line-height: 1.4;
+            border: 1px solid var(--border);
+            background: rgba(15, 23, 42, 0.5);
+        }
+
+        .sf-desc-item.d1 { flex: 0.3; }
+        .sf-desc-item.d2 { flex: 4.1; }
+        .sf-desc-item.d3 { flex: 0.5; }
+        .sf-desc-item.d4 { flex: 0.5; }
+        .sf-desc-item.d5 { flex: 1.2; }
+        .sf-desc-item b { display: block; font-size: 0.7rem; margin-bottom: 2px; }
+        .sf-desc-item.d2 b { color: var(--cyan); }
+        .sf-desc-item.d3 b { color: #a78bfa; }
+        .sf-desc-item.d4 b { color: #e879f9; }
+        .sf-desc-item.d5 b { color: #34d399; }
+
+        /* ── Feature Grid ── */
+        .feat-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 0.8rem;
+            margin: 1.5rem 0;
+        }
+
+        .feat-card {
+            background: rgba(30, 41, 59, 0.5);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 1.2rem;
+            display: flex;
+            gap: 0.8rem;
+            align-items: flex-start;
+        }
+
+        .feat-card .feat-icon { font-size: 1.4rem; flex-shrink: 0; margin-top: 0.1rem; }
+        .feat-card h4 { font-size: 0.88rem; font-weight: 700; margin-bottom: 0.2rem; }
+        .feat-card p { font-size: 0.8rem; color: var(--text-dim); line-height: 1.5; margin: 0; }
+
+        .feat-card:nth-child(1) h4 { color: var(--cyan); }
+        .feat-card:nth-child(2) h4 { color: #a78bfa; }
+        .feat-card:nth-child(3) h4 { color: #6ee7b7; }
+        .feat-card:nth-child(4) h4 { color: var(--orange); }
+
+        /* ── Comparison Table ── */
+        .table-wrap {
+            border-radius: 12px;
+            overflow: hidden;
+            margin: 1.5rem 0;
+            border: 1px solid var(--border);
+        }
+
+        .compare-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.82rem;
+        }
+
+        .compare-table th {
+            background: var(--bg-card);
+            color: var(--text-muted);
+            padding: 0.8rem 1rem;
+            text-align: left;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            font-size: 0.68rem;
+            border-bottom: 2px solid var(--border);
+        }
+
+        .compare-table td {
+            padding: 0.7rem 1rem;
+            border-bottom: 1px solid rgba(51, 65, 85, 0.5);
+            color: var(--text-muted);
+        }
+
+        .compare-table tr:nth-child(even) td { background: rgba(15, 23, 42, 0.3); }
+        .compare-table tr:last-child td { border-bottom: none; }
+
+        .y { color: var(--green); font-weight: 700; }
+        .n { color: #fca5a5; font-weight: 700; }
+        .m { color: var(--orange); font-weight: 700; }
+        .winner { background: rgba(16, 185, 129, 0.04) !important; }
+
+        /* ── Takeaway Cards ── */
+        .takeaways {
+            display: flex;
+            gap: 1rem;
+            margin: 1.5rem 0;
+        }
+
+        .tk {
+            flex: 1;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 1.3rem;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .tk::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; right: 0;
+            height: 3px;
+        }
+
+        .tk:nth-child(1)::before { background: linear-gradient(90deg, var(--purple), var(--pink)); }
+        .tk:nth-child(2)::before { background: linear-gradient(90deg, var(--cyan), var(--purple)); }
+        .tk:nth-child(3)::before { background: linear-gradient(90deg, var(--green), var(--cyan)); }
+
+        .tk .tk-icon { font-size: 1.3rem; margin-bottom: 0.5rem; }
+        .tk h4 { font-size: 0.9rem; font-weight: 700; margin-bottom: 0.3rem; }
+        .tk p { font-size: 0.8rem; color: var(--text-dim); line-height: 1.6; }
+
+        /* ===== FOOTER ===== */
+        footer {
+            border-top: 1px solid var(--border);
+            padding: 3rem 2rem;
+            text-align: center;
+        }
+
+        footer p { color: var(--text-dim); font-size: 0.85rem; }
+
+        footer .gradient-line {
+            width: 100px; height: 3px;
+            background: linear-gradient(90deg, var(--purple), var(--pink), var(--orange));
+            margin: 0 auto 1.5rem;
+            border-radius: 2px;
+        }
+
+        .nav-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.7rem 1.5rem;
+            background: linear-gradient(135deg, var(--purple), var(--pink));
+            color: white;
+            border: none;
+            border-radius: 10px;
+            font-size: 0.9rem;
+            font-weight: 600;
+            cursor: pointer;
+            text-decoration: none;
+            transition: all 0.3s;
+            margin-top: 1rem;
+        }
+
+        .nav-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 30px rgba(139, 92, 246, 0.3);
+        }
+
+        /* ===== RESPONSIVE ===== */
+        @media (max-width: 768px) {
+            .sidebar { display: none; }
+            .vs-section { flex-direction: column; }
+            .vs-divider { min-width: 0; padding: 0.5rem 0; }
+            .feat-grid { grid-template-columns: 1fr; }
+            .takeaways { flex-direction: column; }
+            .stats-row { flex-wrap: wrap; }
+            .stat-pill { min-width: calc(50% - 0.5rem); }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Nav -->
+    <nav>
+        <div class="nav-inner">
+            <div class="nav-left">
+                <a href="index.html" class="nav-logo">
+                    <div class="nav-logo-icon">SD</div>
+                    <span>System Design for Dummies</span>
+                </a>
+                <div class="nav-sep"></div>
+                <div class="nav-chapter-badge">
+                    <div class="dot"></div>
+                    Chapter 2
+                </div>
+            </div>
+            <div class="nav-center">
+                <a href="index.html">Home</a>
+                <a href="chapter1.html">Ch 1</a>
+            </div>
+            <div class="nav-right">
+                <span class="nav-counter">5 sections</span>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Sidebar Dots -->
+    <div class="sidebar" id="sidebar">
+        <a href="#hero"><span class="tooltip">Intro</span></a>
+        <a href="#incident"><span class="tooltip">The Incident</span></a>
+        <a href="#overflow"><span class="tooltip">Integer Overflow</span></a>
+        <a href="#fix"><span class="tooltip">32 vs 64 bit</span></a>
+        <a href="#snowflake"><span class="tooltip">Snowflake IDs</span></a>
+        <a href="#comparison"><span class="tooltip">Comparison</span></a>
+        <a href="#takeaways"><span class="tooltip">Takeaways</span></a>
+    </div>
+
+    <!-- Hero -->
+    <section class="chapter-hero" id="hero">
+        <div class="chapter-hero-bg"></div>
+        <div class="chapter-hero-content">
+            <div class="chapter-label">
+                <div class="ch-dot"></div>
+                Chapter 02 &mdash; Case Study
+            </div>
+            <h1>
+                <span class="gradient">Integer Overflow</span><br>& Snowflake IDs
+            </h1>
+            <p>How Chess.com's 2 billionth game broke the app &mdash; and how to design IDs that never fail.</p>
+            <div class="chapter-tags">
+                <span class="chapter-tag" style="background: rgba(139,92,246,0.1); color: var(--purple); border: 1px solid rgba(139,92,246,0.2);">Integer Overflow</span>
+                <span class="chapter-tag" style="background: rgba(6,182,212,0.1); color: var(--cyan); border: 1px solid rgba(6,182,212,0.2);">Snowflake IDs</span>
+                <span class="chapter-tag" style="background: rgba(236,72,153,0.1); color: var(--pink); border: 1px solid rgba(236,72,153,0.2);">Distributed Systems</span>
+                <span class="chapter-tag" style="background: rgba(245,158,11,0.1); color: var(--orange); border: 1px solid rgba(245,158,11,0.2);">Real-World Failure</span>
+            </div>
+        </div>
+    </section>
+
+    <div class="content-section">
+
+        <!-- 1: THE INCIDENT -->
+        <div class="section-block" id="incident">
+            <div class="section-card">
+                <div class="section-header">
+                    <div class="section-icon" style="background: linear-gradient(135deg, var(--purple), var(--pink));">&#9823;</div>
+                    <div class="section-header-text">
+                        <h2>The Incident &mdash; 2017</h2>
+                        <div class="subtitle">When Chess.com's own success crashed the app</div>
+                    </div>
+                </div>
+                <div class="section-body">
+                    <div class="incident-hero">
+                        <p style="color: var(--text-muted); font-size: 0.95rem;">Chess.com's iOS app crashed on every 32-bit iPad. No server issue. No hack. The platform had simply played its</p>
+                        <div class="big-number">2,147,483,648th game</div>
+                        <p style="color: var(--text-muted); font-size: 0.95rem;">That's <b style="color: #c084fc;">2^31</b> &mdash; one more than a 32-bit signed integer can hold.<br>The game ID overflowed. The app couldn't process it. <b style="color: var(--text);">Instant crash.</b></p>
+                    </div>
+                    <div class="stats-row">
+                        <div class="stat-pill">
+                            <div class="icon">&#9823;</div>
+                            <div class="val">2^31</div>
+                            <div class="lbl">Max 32-bit Int</div>
+                        </div>
+                        <div class="stat-pill">
+                            <div class="icon">&#9201;</div>
+                            <div class="val">~2h</div>
+                            <div class="lbl">Apple Fix</div>
+                        </div>
+                        <div class="stat-pill">
+                            <div class="icon">&#128293;</div>
+                            <div class="val">#1</div>
+                            <div class="lbl">Hacker News</div>
+                        </div>
+                        <div class="stat-pill">
+                            <div class="icon">&#127760;</div>
+                            <div class="val">100M+</div>
+                            <div class="lbl">Users Hit</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 2: WHAT IS INTEGER OVERFLOW -->
+        <div class="section-block" id="overflow">
+            <div class="section-card">
+                <div class="section-header">
+                    <div class="section-icon" style="background: linear-gradient(135deg, var(--red), var(--orange));">&#9888;</div>
+                    <div class="section-header-text">
+                        <h2>What is Integer Overflow?</h2>
+                        <div class="subtitle">When numbers exceed their data type's limits</div>
+                    </div>
+                </div>
+                <div class="section-body">
+                    <p>When a number exceeds the <b>maximum value</b> its data type can store, the bits wrap around. In a signed integer, the <b>sign bit flips</b> &mdash; turning a large positive number into a large negative. The system can't handle it. It crashes.</p>
+
+                    <div class="bits-container">
+                        <div class="bit-label">Max value: <span>2,147,483,647</span></div>
+                        <div class="bit-row">
+                            <div class="bit sign-ok">0</div>
+                            <div class="bit on">1</div><div class="bit on">1</div><div class="bit on">1</div><div class="bit on">1</div>
+                            <div class="bit on">1</div><div class="bit on">1</div><div class="bit on">1</div><div class="bit on">1</div>
+                            <div class="bit on">1</div><div class="bit on">1</div><div class="bit on">1</div><div class="bit on">1</div>
+                            <div class="bit on">1</div><div class="bit on">1</div><div class="bit on">1</div><div class="bit on">1</div>
+                            <div class="bit on">1</div><div class="bit on">1</div><div class="bit on">1</div><div class="bit on">1</div>
+                            <div class="bit on">1</div><div class="bit on">1</div><div class="bit on">1</div><div class="bit on">1</div>
+                            <div class="bit on">1</div><div class="bit on">1</div><div class="bit on">1</div><div class="bit on">1</div>
+                            <div class="bit on">1</div><div class="bit on">1</div><div class="bit on">1</div>
+                        </div>
+                        <div class="overflow-arrow">+ 1</div>
+                        <div class="bit-label">Overflowed: <span>-2,147,483,648</span></div>
+                        <div class="bit-row">
+                            <div class="bit sign-bad">1</div>
+                            <div class="bit off">0</div><div class="bit off">0</div><div class="bit off">0</div><div class="bit off">0</div>
+                            <div class="bit off">0</div><div class="bit off">0</div><div class="bit off">0</div><div class="bit off">0</div>
+                            <div class="bit off">0</div><div class="bit off">0</div><div class="bit off">0</div><div class="bit off">0</div>
+                            <div class="bit off">0</div><div class="bit off">0</div><div class="bit off">0</div><div class="bit off">0</div>
+                            <div class="bit off">0</div><div class="bit off">0</div><div class="bit off">0</div><div class="bit off">0</div>
+                            <div class="bit off">0</div><div class="bit off">0</div><div class="bit off">0</div><div class="bit off">0</div>
+                            <div class="bit off">0</div><div class="bit off">0</div><div class="bit off">0</div><div class="bit off">0</div>
+                            <div class="bit off">0</div><div class="bit off">0</div><div class="bit off">0</div>
+                        </div>
+                        <div class="result-tags">
+                            <div class="result-tag ok">Sign bit 0 = Positive</div>
+                            <div class="result-tag bad">Sign bit 1 = Negative = CRASH</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 3: 32 vs 64 BIT -->
+        <div class="section-block" id="fix">
+            <div class="section-card">
+                <div class="section-header">
+                    <div class="section-icon" style="background: linear-gradient(135deg, var(--green), var(--cyan));">&#9889;</div>
+                    <div class="section-header-text">
+                        <h2>The Fix: 32-bit vs 64-bit</h2>
+                        <div class="subtitle">Why migrating to 64-bit solves the ceiling problem</div>
+                    </div>
+                </div>
+                <div class="section-body">
+                    <p>The immediate fix was straightforward &mdash; <b>migrate game IDs from 32-bit to 64-bit integers</b>. But the difference in headroom is staggering.</p>
+
+                    <div class="vs-section">
+                        <div class="vs-card bad">
+                            <div class="card-icon">&#128164;</div>
+                            <h3>32-bit Signed Integer</h3>
+                            <div class="card-num">Max: 2,147,483,647</div>
+                            <p>~2.1 billion. Sounds like a lot &mdash; until your platform goes viral. Chess.com hit this wall in just a few years.</p>
+                            <div class="lifespan">
+                                <div class="time">~6 years</div>
+                                <div class="note">at Chess.com's growth rate</div>
+                            </div>
+                        </div>
+                        <div class="vs-divider"><div class="vs-badge">VS</div></div>
+                        <div class="vs-card good">
+                            <div class="card-icon">&#9889;</div>
+                            <h3>64-bit Signed Integer</h3>
+                            <div class="card-num">Max: 9.2 quintillion</div>
+                            <p>At 1 million games per day, you'd need <b style="color: #6ee7b7;">25 billion years</b> to overflow. The sun dies first.</p>
+                            <div class="lifespan">
+                                <div class="time">25B years</div>
+                                <div class="note">at 1M games/day</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 4: SNOWFLAKE IDS -->
+        <div class="section-block" id="snowflake">
+            <div class="section-card">
+                <div class="section-header">
+                    <div class="section-icon" style="background: linear-gradient(135deg, var(--cyan), var(--blue));">&#10052;</div>
+                    <div class="section-header-text">
+                        <h2>The Real Solution: Snowflake IDs</h2>
+                        <div class="subtitle">Twitter's answer to distributed ID generation</div>
+                    </div>
+                </div>
+                <div class="section-body">
+                    <p>64-bit fixes overflow. But in <b>distributed systems</b>, you also need IDs that are <b>globally unique</b>, <b>time-sortable</b>, and generated <b>without coordination</b>. Twitter's Snowflake ID solves all of this in a single 64-bit integer.</p>
+
+                    <div class="sf-visual">
+                        <div class="sf-bar">
+                            <div class="sf-seg unused"><div class="bits">1</div><div class="lbl">Sign</div></div>
+                            <div class="sf-seg ts"><div class="bits">41 bits</div><div class="lbl">Timestamp</div></div>
+                            <div class="sf-seg dc"><div class="bits">5</div><div class="lbl">DC</div></div>
+                            <div class="sf-seg wk"><div class="bits">5</div><div class="lbl">Worker</div></div>
+                            <div class="sf-seg sq"><div class="bits">12 bits</div><div class="lbl">Sequence</div></div>
+                        </div>
+                        <div class="sf-desc-row">
+                            <div class="sf-desc-item d1"><b>0</b>Always +</div>
+                            <div class="sf-desc-item d2"><b>Milliseconds since epoch</b>69 years of runway</div>
+                            <div class="sf-desc-item d3"><b>32 DCs</b>Datacenter</div>
+                            <div class="sf-desc-item d4"><b>32 Workers</b>Machine ID</div>
+                            <div class="sf-desc-item d5"><b>4,096/ms</b>Sequence</div>
+                        </div>
+                    </div>
+
+                    <div class="feat-grid">
+                        <div class="feat-card">
+                            <div class="feat-icon">&#128268;</div>
+                            <div>
+                                <h4>No Coordination</h4>
+                                <p>Each machine generates IDs independently. No central bottleneck.</p>
+                            </div>
+                        </div>
+                        <div class="feat-card">
+                            <div class="feat-icon">&#128336;</div>
+                            <div>
+                                <h4>Time-Sortable</h4>
+                                <p>Timestamp in MSBs. IDs sort chronologically by default.</p>
+                            </div>
+                        </div>
+                        <div class="feat-card">
+                            <div class="feat-icon">&#128640;</div>
+                            <div>
+                                <h4>4,096 IDs/ms/Worker</h4>
+                                <p>~4M IDs per second per machine. Built for scale.</p>
+                            </div>
+                        </div>
+                        <div class="feat-card">
+                            <div class="feat-icon">&#128737;</div>
+                            <div>
+                                <h4>69 Years Runway</h4>
+                                <p>41-bit timestamp from custom epoch. Reset when needed.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 5: COMPARISON + TAKEAWAYS -->
+        <div class="section-block" id="comparison">
+            <div class="section-card">
+                <div class="section-header">
+                    <div class="section-icon" style="background: linear-gradient(135deg, var(--indigo), var(--blue));">&#128200;</div>
+                    <div class="section-header-text">
+                        <h2>ID Strategy Comparison</h2>
+                        <div class="subtitle">Auto-increment vs UUID vs Snowflake</div>
+                    </div>
+                </div>
+                <div class="section-body">
+                    <div class="table-wrap">
+                        <table class="compare-table">
+                            <tr>
+                                <th>Feature</th>
+                                <th>Auto-Increment</th>
+                                <th>UUID (128-bit)</th>
+                                <th>Snowflake ID</th>
+                            </tr>
+                            <tr>
+                                <td>Globally Unique</td>
+                                <td class="n">No (single DB)</td>
+                                <td class="y">Yes</td>
+                                <td class="y winner">Yes</td>
+                            </tr>
+                            <tr>
+                                <td>Time-Sortable</td>
+                                <td class="m">Insert order</td>
+                                <td class="n">No (random)</td>
+                                <td class="y winner">Yes (by design)</td>
+                            </tr>
+                            <tr>
+                                <td>Size</td>
+                                <td class="y">32/64 bit</td>
+                                <td class="n">128 bit</td>
+                                <td class="y winner">64 bit</td>
+                            </tr>
+                            <tr>
+                                <td>Distributed</td>
+                                <td class="n">Needs coordination</td>
+                                <td class="y">Yes</td>
+                                <td class="y winner">Yes</td>
+                            </tr>
+                            <tr>
+                                <td>Index Performance</td>
+                                <td class="y">Great</td>
+                                <td class="n">Poor (random)</td>
+                                <td class="y winner">Great (sequential)</td>
+                            </tr>
+                            <tr>
+                                <td>Overflow Risk</td>
+                                <td class="n">32-bit: High</td>
+                                <td class="y">Practically none</td>
+                                <td class="y winner">69 years</td>
+                            </tr>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 6: TAKEAWAYS -->
+        <div class="section-block" id="takeaways">
+            <div class="section-card">
+                <div class="section-header">
+                    <div class="section-icon" style="background: linear-gradient(135deg, var(--green), var(--cyan));">&#127919;</div>
+                    <div class="section-header-text">
+                        <h2>Key Takeaways</h2>
+                        <div class="subtitle">Design lessons from Chess.com's overflow</div>
+                    </div>
+                </div>
+                <div class="section-body">
+                    <div class="takeaways">
+                        <div class="tk">
+                            <div class="tk-icon">&#128683;</div>
+                            <h4>Never Use 32-bit for IDs</h4>
+                            <p>2 billion feels far until it isn't. Default to 64-bit. Always.</p>
+                        </div>
+                        <div class="tk">
+                            <div class="tk-icon">&#128505;</div>
+                            <h4>IDs Are Infrastructure</h4>
+                            <p>Your ID scheme affects sharding, sorting, indexing, and coordination.</p>
+                        </div>
+                        <div class="tk">
+                            <div class="tk-icon">&#10052;</div>
+                            <h4>Snowflake for Scale</h4>
+                            <p>Uniqueness + ordering + compactness in 64 bits. Battle-tested.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- Footer -->
+    <footer>
+        <div class="gradient-line"></div>
+        <p>System Design for Dummies &mdash; Chapter 2: Integer Overflow & Snowflake IDs</p>
+        <div style="margin-top: 1.5rem; display: flex; gap: 1rem; justify-content: center;">
+            <a href="chapter1.html" class="nav-btn" style="background: var(--bg-card); border: 1px solid var(--border);">&larr; Ch 1: API Design</a>
+            <a href="index.html" class="nav-btn">All Chapters</a>
+        </div>
+    </footer>
+
+    <script>
+        // Scroll reveal
+        const blocks = document.querySelectorAll('.section-block');
+        const observer = new IntersectionObserver((entries) => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting) {
+                    entry.target.classList.add('visible');
+                }
+            });
+        }, { threshold: 0.1 });
+
+        blocks.forEach(b => observer.observe(b));
+
+        // Sidebar active state
+        const sidebarLinks = document.querySelectorAll('.sidebar a');
+        const sections = document.querySelectorAll('[id]');
+
+        window.addEventListener('scroll', () => {
+            let current = '';
+            sections.forEach(section => {
+                const top = section.offsetTop - 200;
+                if (window.scrollY >= top) {
+                    current = section.getAttribute('id');
+                }
+            });
+            sidebarLinks.forEach(link => {
+                link.classList.remove('active');
+                if (link.getAttribute('href') === '#' + current) {
+                    link.classList.add('active');
+                }
+            });
+        });
+    </script>
+
+    <!-- Print mode: triggered by ?print=1 from PDF exporter -->
+    <script>
+        if (new URLSearchParams(window.location.search).has('print')) {
+            // Add print-ready styles
+            const s = document.createElement('style');
+            s.textContent = `
+                .section-block, .concept { opacity:1!important; transform:none!important; transition:none!important; }
+                nav, .sidebar, .progress-bar { position:relative!important; }
+                .sidebar, .scroll-indicator { display:none!important; }
+                @media print {
+                    * { -webkit-print-color-adjust:exact!important; print-color-adjust:exact!important; }
+                    body { background:var(--bg)!important; }
+                }
+            `;
+            document.head.appendChild(s);
+            // Force all sections visible
+            document.querySelectorAll('.section-block, .concept').forEach(el => {
+                el.style.setProperty('opacity','1','important');
+                el.style.setProperty('transform','none','important');
+                el.classList.add('visible');
+            });
+            // Print after paint
+            window.addEventListener('load', () => setTimeout(() => window.print(), 500));
+        }
+    </script>
+
+</body>
+</html>
