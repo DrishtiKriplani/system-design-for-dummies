@@ -1,0 +1,651 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ch 3: Database Design — System Design for Dummies</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧠</text></svg>">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap');
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        :root {
+            --bg: #0f172a; --bg-card: #1e293b; --bg-code: #0d1117;
+            --text: #f8fafc; --text-muted: #94a3b8; --text-dim: #64748b;
+            --border: #334155; --blue: #3b82f6; --green: #10b981;
+            --orange: #f59e0b; --purple: #8b5cf6; --pink: #ec4899;
+            --red: #ef4444; --cyan: #06b6d4; --indigo: #6366f1;
+        }
+        html { scroll-behavior: smooth; scrollbar-width: thin; scrollbar-color: var(--border) var(--bg); }
+        body { font-family: 'Inter', -apple-system, sans-serif; background: var(--bg); color: var(--text); line-height: 1.6; overflow-x: hidden; }
+
+        /* ===== NAV ===== */
+        nav { position: fixed; top: 0; left: 0; right: 0; z-index: 100; background: rgba(15,23,42,0.85); backdrop-filter: blur(20px); border-bottom: 1px solid rgba(51,65,85,0.5); }
+        .nav-inner { max-width: 1100px; margin: 0 auto; padding: 0.65rem 2rem; display: flex; align-items: center; justify-content: space-between; }
+        .nav-left { display: flex; align-items: center; gap: 1rem; }
+        .nav-logo { display: flex; align-items: center; gap: 0.6rem; font-weight: 800; font-size: 0.95rem; text-decoration: none; color: var(--text); letter-spacing: -0.5px; }
+        .nav-logo-icon { width: 28px; height: 28px; border-radius: 7px; background: linear-gradient(135deg, var(--blue), var(--purple)); display: flex; align-items: center; justify-content: center; font-size: 0.65rem; font-weight: 900; color: white; }
+        .nav-logo span { background: linear-gradient(135deg, var(--blue), var(--purple)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        .nav-sep { width: 1px; height: 18px; background: var(--border); }
+        .nav-chapter-badge { display: flex; align-items: center; gap: 0.4rem; font-size: 0.72rem; font-weight: 600; color: var(--cyan); background: rgba(6,182,212,0.08); border: 1px solid rgba(6,182,212,0.15); padding: 0.2rem 0.7rem; border-radius: 50px; }
+        .nav-chapter-badge .dot { width: 5px; height: 5px; border-radius: 50%; background: var(--cyan); }
+        .nav-center { display: flex; gap: 0.25rem; }
+        .nav-center a { color: var(--text-muted); text-decoration: none; font-size: 0.78rem; font-weight: 500; padding: 0.35rem 0.7rem; border-radius: 6px; transition: all 0.2s; }
+        .nav-center a:hover { color: var(--text); background: rgba(6,182,212,0.1); }
+        .nav-right { display: flex; align-items: center; }
+        .nav-counter { font-family: 'JetBrains Mono', monospace; font-size: 0.72rem; color: var(--text-dim); background: var(--bg-card); padding: 0.25rem 0.6rem; border-radius: 20px; border: 1px solid var(--border); }
+
+        /* ===== SIDEBAR ===== */
+        .sidebar { position: fixed; left: 1.2rem; top: 50%; transform: translateY(-50%); z-index: 50; display: flex; flex-direction: column; gap: 4px; }
+        .sidebar a { width: 8px; height: 8px; border-radius: 50%; background: var(--border); transition: all 0.3s; display: block; position: relative; }
+        .sidebar a:hover { background: var(--text-muted); transform: scale(1.5); }
+        .sidebar a.active { background: var(--cyan); box-shadow: 0 0 8px rgba(6,182,212,0.5); transform: scale(1.5); }
+        .sidebar a .tooltip { position: absolute; left: 18px; top: 50%; transform: translateY(-50%); background: var(--bg-card); color: var(--text); padding: 0.3rem 0.7rem; border-radius: 6px; font-size: 0.65rem; white-space: nowrap; opacity: 0; pointer-events: none; transition: opacity 0.2s; border: 1px solid var(--border); }
+        .sidebar a:hover .tooltip { opacity: 1; }
+
+        /* ===== HERO ===== */
+        .chapter-hero { padding: 8rem 2rem 4rem; text-align: center; position: relative; overflow: hidden; }
+        .chapter-hero-bg { position: absolute; inset: 0; background: radial-gradient(ellipse at 30% 50%, rgba(6,182,212,0.1) 0%, transparent 60%), radial-gradient(ellipse at 70% 30%, rgba(59,130,246,0.08) 0%, transparent 50%); }
+        .chapter-hero-content { position: relative; max-width: 700px; margin: 0 auto; }
+        .chapter-label { display: inline-flex; align-items: center; gap: 0.5rem; font-size: 0.75rem; font-weight: 600; text-transform: uppercase; letter-spacing: 2px; color: var(--cyan); margin-bottom: 1.2rem; }
+        .chapter-label .ch-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--cyan); }
+        .chapter-hero h1 { font-size: clamp(2rem, 5vw, 3rem); font-weight: 900; letter-spacing: -1.5px; line-height: 1.15; margin-bottom: 0.8rem; }
+        .chapter-hero h1 .gradient { background: linear-gradient(135deg, var(--cyan), var(--blue)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        .chapter-hero-content > p { color: var(--text-muted); font-size: 1.05rem; max-width: 520px; margin: 0 auto; line-height: 1.7; }
+        .chapter-tags { display: flex; justify-content: center; gap: 0.5rem; flex-wrap: wrap; margin-top: 1.8rem; }
+        .chapter-tag { padding: 0.3rem 0.85rem; border-radius: 50px; font-size: 0.7rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
+
+        /* ===== SECTIONS ===== */
+        .content-section { max-width: 900px; margin: 0 auto; padding: 2rem 2rem 4rem; }
+        .section-block { position: relative; margin-bottom: 4rem; opacity: 0; transform: translateY(30px); transition: all 0.6s cubic-bezier(0.16, 1, 0.3, 1); }
+        .section-block.visible { opacity: 1; transform: translateY(0); }
+        .section-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 16px; overflow: hidden; }
+        .section-header { padding: 1.5rem 2rem 1rem; display: flex; align-items: flex-start; gap: 1rem; }
+        .section-icon { width: 44px; height: 44px; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 1.2rem; flex-shrink: 0; }
+        .section-header-text h2 { font-size: 1.3rem; font-weight: 800; letter-spacing: -0.5px; margin-bottom: 0.2rem; }
+        .section-header-text .subtitle { font-size: 0.85rem; color: var(--text-muted); line-height: 1.6; }
+        .section-body { padding: 0.5rem 2rem 2rem; }
+        .section-body p { color: var(--text-muted); font-size: 0.92rem; line-height: 1.8; margin-bottom: 1.2rem; }
+        .section-body p b { color: var(--text); }
+
+        /* ── Incident Hero ── */
+        .incident-hero { background: linear-gradient(135deg, rgba(6,182,212,0.08), rgba(59,130,246,0.05)); border: 1px solid rgba(6,182,212,0.15); border-radius: 14px; padding: 2rem; text-align: center; margin-bottom: 1.5rem; }
+        .incident-hero .big-number { font-family: 'JetBrains Mono', monospace; font-size: 2.5rem; font-weight: 800; background: linear-gradient(135deg, var(--cyan), var(--blue)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; margin: 0.8rem 0; line-height: 1.2; }
+        .stats-row { display: flex; gap: 1rem; margin: 1.5rem 0; }
+        .stat-pill { flex: 1; background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; padding: 1rem; text-align: center; }
+        .stat-pill .icon { font-size: 1.3rem; margin-bottom: 0.4rem; }
+        .stat-pill .val { font-family: 'JetBrains Mono', monospace; font-size: 1.3rem; font-weight: 800; background: linear-gradient(135deg, var(--cyan), var(--blue)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        .stat-pill .lbl { font-size: 0.65rem; color: var(--text-dim); text-transform: uppercase; letter-spacing: 1px; margin-top: 0.2rem; }
+
+        /* ── VS Cards ── */
+        .vs-section { display: flex; gap: 1rem; margin: 1.5rem 0; align-items: stretch; }
+        .vs-card { flex: 1; border-radius: 14px; padding: 1.5rem; position: relative; overflow: hidden; }
+        .vs-card::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px; }
+        .vs-card.sql { background: rgba(6,182,212,0.04); border: 1px solid rgba(6,182,212,0.12); }
+        .vs-card.sql::before { background: linear-gradient(90deg, transparent, var(--cyan), transparent); }
+        .vs-card.nosql { background: rgba(139,92,246,0.04); border: 1px solid rgba(139,92,246,0.12); }
+        .vs-card.nosql::before { background: linear-gradient(90deg, transparent, var(--purple), transparent); }
+        .vs-card .card-icon { font-size: 1.8rem; margin-bottom: 0.8rem; }
+        .vs-card h3 { font-size: 1.1rem; font-weight: 700; margin-bottom: 0.4rem; }
+        .vs-card.sql h3 { color: #67e8f9; }
+        .vs-card.nosql h3 { color: #c4b5fd; }
+        .vs-card p { font-size: 0.82rem; color: var(--text-muted); line-height: 1.6; }
+        .vs-card ul { list-style: none; margin-top: 0.6rem; }
+        .vs-card ul li { font-size: 0.8rem; color: var(--text-muted); padding: 0.25rem 0; }
+        .vs-card ul li b { color: var(--text); }
+        .vs-card .who { margin-top: 0.8rem; font-size: 0.7rem; color: var(--text-dim); }
+        .vs-card .who span { font-weight: 700; }
+        .vs-card.sql .who span { color: #67e8f9; }
+        .vs-card.nosql .who span { color: #c4b5fd; }
+        .vs-divider { display: flex; align-items: center; justify-content: center; min-width: 40px; }
+        .vs-badge { background: linear-gradient(135deg, var(--cyan), var(--blue)); color: white; font-size: 0.75rem; font-weight: 800; width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; box-shadow: 0 0 20px rgba(6,182,212,0.3); }
+
+        /* ── Index Bars ── */
+        .index-visual { background: var(--bg-code); border-radius: 14px; padding: 1.5rem; margin: 1.5rem 0; border: 1px solid var(--border); }
+        .index-visual .title { font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: var(--text-dim); margin-bottom: 1rem; text-align: center; }
+        .index-row { display: flex; gap: 0.5rem; align-items: center; margin-bottom: 0.5rem; }
+        .index-label { width: 90px; font-size: 0.72rem; font-weight: 600; text-align: right; flex-shrink: 0; }
+        .index-bar { height: 32px; border-radius: 6px; display: flex; align-items: center; padding: 0 0.8rem; font-family: 'JetBrains Mono', monospace; font-size: 0.72rem; font-weight: 700; }
+        .index-bar.slow { background: linear-gradient(90deg, rgba(239,68,68,0.15), rgba(239,68,68,0.05)); border: 1px solid rgba(239,68,68,0.2); color: #fca5a5; }
+        .index-bar.fast { background: linear-gradient(90deg, rgba(16,185,129,0.15), rgba(16,185,129,0.05)); border: 1px solid rgba(16,185,129,0.2); color: #6ee7b7; }
+        .index-note { text-align: center; margin-top: 1rem; font-size: 0.78rem; color: var(--text-dim); }
+        .index-note b { color: var(--green); }
+
+        /* ── Shard Visual ── */
+        .shard-visual { background: var(--bg-code); border-radius: 14px; padding: 1.5rem; margin: 1.5rem 0; border: 1px solid var(--border); }
+        .shard-visual .title { font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: var(--text-dim); margin-bottom: 1rem; text-align: center; }
+        .shard-flow { display: flex; align-items: center; justify-content: center; gap: 0.8rem; flex-wrap: wrap; }
+        .shard-box { border-radius: 12px; padding: 1rem 1.2rem; text-align: center; min-width: 100px; }
+        .shard-box.source { background: linear-gradient(135deg, rgba(239,68,68,0.08), rgba(245,158,11,0.08)); border: 1px solid rgba(239,68,68,0.2); }
+        .shard-box.source .icon { font-size: 1.5rem; }
+        .shard-box.source .label { font-size: 0.7rem; font-weight: 700; color: #fca5a5; margin-top: 0.3rem; }
+        .shard-box.source .sub { font-size: 0.6rem; color: var(--text-dim); }
+        .shard-arrow { font-size: 1.2rem; color: var(--text-dim); }
+        .shard-targets { display: flex; gap: 0.5rem; }
+        .shard-box.target { background: linear-gradient(180deg, rgba(16,185,129,0.08), rgba(6,182,212,0.05)); border: 1px solid rgba(16,185,129,0.2); min-width: 80px; }
+        .shard-box.target .icon { font-size: 1.2rem; }
+        .shard-box.target .label { font-size: 0.65rem; font-weight: 700; color: #6ee7b7; margin-top: 0.2rem; }
+        .shard-box.target .sub { font-size: 0.55rem; color: var(--text-dim); }
+
+        /* ── Replication Visual ── */
+        .repl-visual { background: var(--bg-code); border-radius: 14px; padding: 1.5rem; margin: 1.5rem 0; border: 1px solid var(--border); }
+        .repl-visual .title { font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: var(--text-dim); margin-bottom: 1rem; text-align: center; }
+        .repl-flow { display: flex; align-items: flex-start; justify-content: center; gap: 1rem; flex-wrap: wrap; }
+        .repl-node { border-radius: 14px; padding: 1rem; text-align: center; min-width: 110px; }
+        .repl-node.primary { background: linear-gradient(180deg, rgba(59,130,246,0.1), rgba(59,130,246,0.03)); border: 2px solid rgba(59,130,246,0.3); }
+        .repl-node.replica { background: linear-gradient(180deg, rgba(16,185,129,0.06), rgba(16,185,129,0.02)); border: 1px solid rgba(16,185,129,0.2); }
+        .repl-node .icon { font-size: 1.3rem; }
+        .repl-node .label { font-size: 0.72rem; font-weight: 700; margin-top: 0.3rem; }
+        .repl-node.primary .label { color: #93c5fd; }
+        .repl-node.replica .label { color: #6ee7b7; }
+        .repl-node .ops { margin-top: 0.4rem; }
+        .repl-node .ops span { display: inline-block; padding: 0.12rem 0.35rem; border-radius: 4px; margin: 0.1rem; font-size: 0.6rem; font-weight: 600; }
+        .repl-node .ops .write { background: rgba(59,130,246,0.1); color: #93c5fd; border: 1px solid rgba(59,130,246,0.2); }
+        .repl-node .ops .read { background: rgba(16,185,129,0.1); color: #6ee7b7; border: 1px solid rgba(16,185,129,0.2); }
+        .repl-arrows { display: flex; align-items: center; gap: 0.3rem; padding-top: 1.5rem; color: var(--text-dim); font-size: 0.7rem; }
+
+        /* ── Feature Grid ── */
+        .feat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.8rem; margin: 1.5rem 0; }
+        .feat-card { background: rgba(30,41,59,0.5); border: 1px solid var(--border); border-radius: 12px; padding: 1.2rem; display: flex; gap: 0.8rem; align-items: flex-start; }
+        .feat-card .feat-icon { font-size: 1.4rem; flex-shrink: 0; }
+        .feat-card h4 { font-size: 0.88rem; font-weight: 700; margin-bottom: 0.2rem; }
+        .feat-card p { font-size: 0.8rem; color: var(--text-dim); line-height: 1.5; margin: 0; }
+        .feat-card:nth-child(1) h4 { color: var(--cyan); }
+        .feat-card:nth-child(2) h4 { color: #a78bfa; }
+        .feat-card:nth-child(3) h4 { color: #6ee7b7; }
+        .feat-card:nth-child(4) h4 { color: var(--orange); }
+
+        /* ── Consistency Spectrum ── */
+        .spectrum { background: var(--bg-code); border-radius: 14px; padding: 1.5rem; margin: 1.5rem 0; border: 1px solid var(--border); }
+        .spectrum .title { font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: var(--text-dim); margin-bottom: 1rem; text-align: center; }
+        .spectrum-bar { height: 8px; border-radius: 4px; background: linear-gradient(90deg, var(--green), var(--cyan), var(--orange), var(--red)); margin-bottom: 1rem; }
+        .spectrum-labels { display: flex; justify-content: space-between; }
+        .spectrum-label { text-align: center; flex: 1; }
+        .spectrum-label .name { font-size: 0.72rem; font-weight: 700; margin-bottom: 0.2rem; }
+        .spectrum-label .desc { font-size: 0.62rem; color: var(--text-dim); line-height: 1.4; }
+        .spectrum-label .example { font-size: 0.58rem; color: var(--text-dim); font-style: italic; margin-top: 0.15rem; }
+
+        /* ── Comparison Table ── */
+        .table-wrap { border-radius: 12px; overflow: hidden; margin: 1.5rem 0; border: 1px solid var(--border); }
+        .compare-table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+        .compare-table th { background: var(--bg-card); color: var(--text-muted); padding: 0.8rem 1rem; text-align: left; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; font-size: 0.68rem; border-bottom: 2px solid var(--border); }
+        .compare-table td { padding: 0.7rem 1rem; border-bottom: 1px solid rgba(51,65,85,0.5); color: var(--text-muted); }
+        .compare-table tr:nth-child(even) td { background: rgba(15,23,42,0.3); }
+        .compare-table tr:last-child td { border-bottom: none; }
+        .y { color: var(--green); font-weight: 700; }
+        .n { color: #fca5a5; font-weight: 700; }
+        .m { color: var(--orange); font-weight: 700; }
+
+        /* ── Takeaways ── */
+        .takeaways { display: flex; gap: 1rem; margin: 1.5rem 0; }
+        .tk { flex: 1; background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; padding: 1.3rem; position: relative; overflow: hidden; }
+        .tk::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px; }
+        .tk:nth-child(1)::before { background: linear-gradient(90deg, var(--cyan), var(--blue)); }
+        .tk:nth-child(2)::before { background: linear-gradient(90deg, var(--green), var(--cyan)); }
+        .tk:nth-child(3)::before { background: linear-gradient(90deg, var(--purple), var(--pink)); }
+        .tk:nth-child(4)::before { background: linear-gradient(90deg, var(--orange), var(--red)); }
+        .tk .tk-icon { font-size: 1.3rem; margin-bottom: 0.5rem; }
+        .tk h4 { font-size: 0.9rem; font-weight: 700; margin-bottom: 0.3rem; }
+        .tk p { font-size: 0.8rem; color: var(--text-dim); line-height: 1.6; }
+
+        /* ── Analogy Box ── */
+        .analogy { background: rgba(6,182,212,0.05); border: 1px solid rgba(6,182,212,0.12); border-radius: 10px; padding: 1rem 1.2rem; margin: 1rem 0; font-size: 0.82rem; color: var(--text-muted); line-height: 1.6; }
+        .analogy b { color: #67e8f9; }
+
+        /* ===== FOOTER ===== */
+        footer { border-top: 1px solid var(--border); padding: 3rem 2rem; text-align: center; }
+        footer p { color: var(--text-dim); font-size: 0.85rem; }
+        footer .gradient-line { width: 100px; height: 3px; background: linear-gradient(90deg, var(--cyan), var(--blue), var(--purple)); margin: 0 auto 1.5rem; border-radius: 2px; }
+        .nav-btn { display: inline-flex; align-items: center; gap: 0.5rem; padding: 0.7rem 1.5rem; background: linear-gradient(135deg, var(--cyan), var(--blue)); color: white; border: none; border-radius: 10px; font-size: 0.9rem; font-weight: 600; cursor: pointer; text-decoration: none; transition: all 0.3s; margin-top: 1rem; }
+        .nav-btn:hover { transform: translateY(-2px); box-shadow: 0 8px 30px rgba(6,182,212,0.3); }
+
+        @media (max-width: 768px) {
+            .sidebar { display: none; }
+            .nav-center { display: none; }
+            .vs-section { flex-direction: column; }
+            .vs-divider { min-width: 0; padding: 0.5rem 0; }
+            .feat-grid { grid-template-columns: 1fr; }
+            .takeaways { flex-direction: column; }
+            .stats-row { flex-wrap: wrap; }
+            .stat-pill { min-width: calc(50% - 0.5rem); }
+            .repl-flow { justify-content: center; }
+            .shard-flow { flex-direction: column; align-items: center; }
+            .spectrum-labels { flex-wrap: wrap; gap: 0.5rem; }
+            .spectrum-label { min-width: 45%; }
+        }
+    </style>
+</head>
+<body>
+
+    <nav>
+        <div class="nav-inner">
+            <div class="nav-left">
+                <a href="index.html" class="nav-logo"><div class="nav-logo-icon">SD</div><span>System Design for Dummies</span></a>
+                <div class="nav-sep"></div>
+                <div class="nav-chapter-badge"><div class="dot"></div>Chapter 3</div>
+            </div>
+            <div class="nav-center">
+                <a href="index.html">Home</a>
+                <a href="chapter1.html">Ch 1</a>
+                <a href="chapter2.html">Ch 2</a>
+            </div>
+            <div class="nav-right"><span class="nav-counter">6 sections</span></div>
+        </div>
+    </nav>
+
+    <div class="sidebar" id="sidebar">
+        <a href="#hero"><span class="tooltip">Intro</span></a>
+        <a href="#incidents"><span class="tooltip">The Incidents</span></a>
+        <a href="#sql-nosql"><span class="tooltip">SQL vs NoSQL</span></a>
+        <a href="#indexing"><span class="tooltip">Indexing</span></a>
+        <a href="#sharding"><span class="tooltip">Sharding</span></a>
+        <a href="#replication"><span class="tooltip">Replication</span></a>
+        <a href="#consistency"><span class="tooltip">Consistency</span></a>
+        <a href="#takeaways"><span class="tooltip">Takeaways</span></a>
+    </div>
+
+    <!-- Hero -->
+    <section class="chapter-hero" id="hero">
+        <div class="chapter-hero-bg"></div>
+        <div class="chapter-hero-content">
+            <div class="chapter-label"><div class="ch-dot"></div>Chapter 03 &mdash; Deep Dive</div>
+            <h1><span class="gradient">Database Design</span><br>That Doesn't Break</h1>
+            <p>How one permission change took down half the internet &mdash; and the five concepts that would have prevented it.</p>
+            <div class="chapter-tags">
+                <span class="chapter-tag" style="background: rgba(6,182,212,0.1); color: var(--cyan); border: 1px solid rgba(6,182,212,0.2);">SQL vs NoSQL</span>
+                <span class="chapter-tag" style="background: rgba(16,185,129,0.1); color: var(--green); border: 1px solid rgba(16,185,129,0.2);">Indexing</span>
+                <span class="chapter-tag" style="background: rgba(139,92,246,0.1); color: var(--purple); border: 1px solid rgba(139,92,246,0.2);">Sharding</span>
+                <span class="chapter-tag" style="background: rgba(59,130,246,0.1); color: var(--blue); border: 1px solid rgba(59,130,246,0.2);">Replication</span>
+                <span class="chapter-tag" style="background: rgba(245,158,11,0.1); color: var(--orange); border: 1px solid rgba(245,158,11,0.2);">Consistency</span>
+            </div>
+        </div>
+    </section>
+
+    <div class="content-section">
+
+        <!-- 1: INCIDENTS -->
+        <div class="section-block" id="incidents">
+            <div class="section-card">
+                <div class="section-header">
+                    <div class="section-icon" style="background: linear-gradient(135deg, var(--red), var(--orange));">&#9889;</div>
+                    <div class="section-header-text">
+                        <h2>When Databases Make Headlines</h2>
+                        <div class="subtitle">Two incidents. Two billion-dollar companies. Same lesson.</div>
+                    </div>
+                </div>
+                <div class="section-body">
+                    <div class="incident-hero">
+                        <p style="color: var(--text-muted); font-size: 0.95rem;">November 18, 2025 &mdash; Cloudflare changed one database permission.</p>
+                        <div class="big-number">5 hours of downtime</div>
+                        <p style="color: var(--text-muted); font-size: 0.95rem;">ChatGPT, Spotify, X stopped responding. A config table grew from <b style="color: #67e8f9;">60 rows to 200+</b>, exceeding a hard-coded limit.</p>
+                    </div>
+                    <div class="stats-row">
+                        <div class="stat-pill"><div class="icon">&#9729;</div><div class="val">5h</div><div class="lbl">Cloudflare Down</div></div>
+                        <div class="stat-pill"><div class="icon">&#10052;</div><div class="val">13h</div><div class="lbl">Snowflake Down</div></div>
+                        <div class="stat-pill"><div class="icon">&#128451;</div><div class="val">480</div><div class="lbl">Notion Shards</div></div>
+                        <div class="stat-pill"><div class="icon">&#128200;</div><div class="val">55.6%</div><div class="lbl">Devs Use PG</div></div>
+                    </div>
+                    <p>A month later, <b>Snowflake pushed a schema migration</b> with no backward compatibility. 10 of 23 regions down for 13 hours. Meanwhile, <b>Notion</b> quietly runs 480 PostgreSQL shards. No drama. The difference? Understanding five concepts.</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- 2: SQL vs NoSQL -->
+        <div class="section-block" id="sql-nosql">
+            <div class="section-card">
+                <div class="section-header">
+                    <div class="section-icon" style="background: linear-gradient(135deg, var(--cyan), var(--purple));">&#128451;</div>
+                    <div class="section-header-text">
+                        <h2>SQL vs NoSQL</h2>
+                        <div class="subtitle">A spreadsheet with rules vs a filing cabinet with freedom</div>
+                    </div>
+                </div>
+                <div class="section-body">
+                    <div class="vs-section">
+                        <div class="vs-card sql">
+                            <div class="card-icon">&#128451;</div>
+                            <h3>SQL (Relational)</h3>
+                            <ul>
+                                <li><b>Schema:</b> Fixed, predefined tables</li>
+                                <li><b>Guarantees:</b> ACID transactions</li>
+                                <li><b>Relationships:</b> Joins &amp; foreign keys</li>
+                                <li><b>Scaling:</b> Vertical (scale up)</li>
+                            </ul>
+                            <div class="who">Used by: <span>Notion &middot; Stripe &middot; Instagram &middot; GitHub</span></div>
+                        </div>
+                        <div class="vs-divider"><div class="vs-badge">VS</div></div>
+                        <div class="vs-card nosql">
+                            <div class="card-icon">&#128195;</div>
+                            <h3>NoSQL (Non-Relational)</h3>
+                            <ul>
+                                <li><b>Schema:</b> Flexible, dynamic</li>
+                                <li><b>Guarantees:</b> BASE (eventual consistency)</li>
+                                <li><b>Relationships:</b> Embedded, denormalized</li>
+                                <li><b>Scaling:</b> Horizontal (scale out)</li>
+                            </ul>
+                            <div class="who">Used by: <span>Netflix &middot; Discord &middot; Uber &middot; Coinbase</span></div>
+                        </div>
+                    </div>
+
+                    <div class="analogy"><b>Analogy:</b> SQL is Excel with strict columns &mdash; every row follows the same structure. NoSQL is a folder of JSON files &mdash; each document can look different.</div>
+
+                    <div class="feat-grid">
+                        <div class="feat-card">
+                            <div class="feat-icon">&#128196;</div>
+                            <div><h4>Document Store</h4><p>MongoDB, CouchDB. JSON-like docs. Flexible schema. Best for: content, catalogs.</p></div>
+                        </div>
+                        <div class="feat-card">
+                            <div class="feat-icon">&#128273;</div>
+                            <div><h4>Key-Value Store</h4><p>Redis, DynamoDB. O(1) lookups. Best for: caching, sessions, leaderboards.</p></div>
+                        </div>
+                        <div class="feat-card">
+                            <div class="feat-icon">&#128202;</div>
+                            <div><h4>Wide-Column</h4><p>Cassandra, HBase. Column families. Best for: time-series, write-heavy workloads.</p></div>
+                        </div>
+                        <div class="feat-card">
+                            <div class="feat-icon">&#128279;</div>
+                            <div><h4>Graph Database</h4><p>Neo4j, Neptune. Nodes &amp; edges. Best for: social networks, recommendations.</p></div>
+                        </div>
+                    </div>
+
+                    <p><b>Plot twist:</b> most companies use both. Stripe runs PostgreSQL for payments + Redis for caching. Uber uses MySQL for trips + Cassandra for driver locations. This is called <b>polyglot persistence</b>.</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- 3: INDEXING -->
+        <div class="section-block" id="indexing">
+            <div class="section-card">
+                <div class="section-header">
+                    <div class="section-icon" style="background: linear-gradient(135deg, var(--green), var(--cyan));">&#128269;</div>
+                    <div class="section-header-text">
+                        <h2>Indexing</h2>
+                        <div class="subtitle">The difference between 2ms and 20 seconds is one line of SQL</div>
+                    </div>
+                </div>
+                <div class="section-body">
+                    <p>An index is a <b>lookup structure</b> that lets the database find rows without scanning every record. Think of it as a book's table of contents &mdash; without it, you'd read every page to find what you need.</p>
+
+                    <div class="index-visual">
+                        <div class="title">SELECT * FROM users WHERE email = 'alice@example.com' &mdash; 50M rows</div>
+                        <div class="index-row">
+                            <div class="index-label" style="color: #fca5a5;">No Index</div>
+                            <div class="index-bar slow" style="width: 100%;">50,000,000 rows scanned &mdash; 23.4s</div>
+                        </div>
+                        <div class="index-row">
+                            <div class="index-label" style="color: #6ee7b7;">B-tree Index</div>
+                            <div class="index-bar fast" style="width: 8%;">26 lookups &mdash; 0.002s</div>
+                        </div>
+                        <div class="index-note">Same query. Same data. <b>11,700x faster</b> with one index.</div>
+                    </div>
+
+                    <div class="analogy"><b>Analogy:</b> Finding a name in a phonebook by reading every entry (full scan) vs using the alphabetical tabs (index). The data is the same &mdash; the access pattern changes everything.</div>
+
+                    <div class="feat-grid">
+                        <div class="feat-card">
+                            <div class="feat-icon">&#127795;</div>
+                            <div><h4>B-tree</h4><p>Default for most databases. Equality + range queries. O(log n). Handles 90% of use cases.</p></div>
+                        </div>
+                        <div class="feat-card">
+                            <div class="feat-icon">#</div>
+                            <div><h4>Hash Index</h4><p>O(1) exact match only. No range support. Fast for lookups like session tokens.</p></div>
+                        </div>
+                        <div class="feat-card">
+                            <div class="feat-icon">&#128218;</div>
+                            <div><h4>Composite</h4><p>Multi-column. (country, city) helps queries filtering by country or both &mdash; but NOT city alone.</p></div>
+                        </div>
+                        <div class="feat-card">
+                            <div class="feat-icon">&#128270;</div>
+                            <div><h4>GIN / Full-text</h4><p>Inverted index for text search, JSONB, arrays. Powers PostgreSQL full-text search.</p></div>
+                        </div>
+                    </div>
+
+                    <p><b>The tradeoff:</b> every index you add <b>slows every write</b> because the DB updates both the table and the index. At 10 indexes, write throughput drops to ~20% of baseline. <b>Index what you query. Delete what you don't.</b></p>
+                </div>
+            </div>
+        </div>
+
+        <!-- 4: SHARDING -->
+        <div class="section-block" id="sharding">
+            <div class="section-card">
+                <div class="section-header">
+                    <div class="section-icon" style="background: linear-gradient(135deg, var(--purple), var(--pink));">&#128256;</div>
+                    <div class="section-header-text">
+                        <h2>Sharding</h2>
+                        <div class="subtitle">When one database can't handle it, split into many</div>
+                    </div>
+                </div>
+                <div class="section-body">
+                    <p>When vertical scaling hits a wall (biggest AWS RDS: 64 vCPU, 512GB RAM), you <b>shard</b> &mdash; split data across multiple independent databases. Each shard holds a subset.</p>
+
+                    <div class="analogy"><b>Analogy:</b> A restaurant that's too busy doesn't build a bigger kitchen &mdash; it opens more locations. Each location serves a different neighborhood.</div>
+
+                    <div class="shard-visual">
+                        <div class="title">Sharding by User ID</div>
+                        <div class="shard-flow">
+                            <div class="shard-box source"><div class="icon">&#128451;</div><div class="label">Single DB</div><div class="sub">100M users &middot; 12TB</div></div>
+                            <div class="shard-arrow">&#10132;</div>
+                            <div class="shard-targets">
+                                <div class="shard-box target"><div class="icon">&#128451;</div><div class="label">Shard 1</div><div class="sub">id % 4 = 0</div></div>
+                                <div class="shard-box target"><div class="icon">&#128451;</div><div class="label">Shard 2</div><div class="sub">id % 4 = 1</div></div>
+                                <div class="shard-box target"><div class="icon">&#128451;</div><div class="label">Shard 3</div><div class="sub">id % 4 = 2</div></div>
+                                <div class="shard-box target"><div class="icon">&#128451;</div><div class="label">Shard 4</div><div class="sub">id % 4 = 3</div></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="feat-grid">
+                        <div class="feat-card">
+                            <div class="feat-icon">&#128290;</div>
+                            <div><h4>Hash-Based</h4><p>hash(key) % N. Even distribution but no range queries. Used by DynamoDB, Cassandra.</p></div>
+                        </div>
+                        <div class="feat-card">
+                            <div class="feat-icon">&#128200;</div>
+                            <div><h4>Range-Based</h4><p>A-M shard 1, N-Z shard 2. Range scans work but hot spots risk. Used by HBase.</p></div>
+                        </div>
+                        <div class="feat-card">
+                            <div class="feat-icon">&#128260;</div>
+                            <div><h4>Consistent Hashing</h4><p>Hash ring. Adding shards moves minimal data. Used by most distributed systems.</p></div>
+                        </div>
+                        <div class="feat-card">
+                            <div class="feat-icon">&#128273;</div>
+                            <div><h4>Shard Key = Everything</h4><p>Bad key (country) = US shard gets 60%. Good key (user_id) = even distribution.</p></div>
+                        </div>
+                    </div>
+
+                    <p><b>Notion's approach:</b> 480 logical shards across 96 machines, partitioned by workspace_id. Users in same workspace hit same shard. <b>But they ran single Postgres for years first.</b> Don't shard until you must &mdash; try replicas, caching, and better indexes first.</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- 5: REPLICATION -->
+        <div class="section-block" id="replication">
+            <div class="section-card">
+                <div class="section-header">
+                    <div class="section-icon" style="background: linear-gradient(135deg, var(--blue), var(--indigo));">&#128257;</div>
+                    <div class="section-header-text">
+                        <h2>Replication</h2>
+                        <div class="subtitle">One copy of your data is a single point of failure</div>
+                    </div>
+                </div>
+                <div class="section-body">
+                    <p>Replication keeps <b>copies of your database</b> on multiple servers. If one dies, another takes over. Reads get distributed for <b>higher throughput</b>.</p>
+
+                    <div class="analogy"><b>Analogy:</b> Making photocopies of an important document. If one gets destroyed, you have backups. But you need to keep all copies updated when the original changes.</div>
+
+                    <div class="repl-visual">
+                        <div class="title">Primary-Replica Architecture</div>
+                        <div class="repl-flow">
+                            <div class="repl-node primary"><div class="icon">&#128451;</div><div class="label">Primary</div><div class="ops"><span class="write">WRITE</span><span class="read">READ</span></div></div>
+                            <div class="repl-arrows">WAL &#10132;</div>
+                            <div class="repl-node replica"><div class="icon">&#128451;</div><div class="label">Replica 1</div><div class="ops"><span class="read">READ</span></div></div>
+                            <div class="repl-node replica"><div class="icon">&#128451;</div><div class="label">Replica 2</div><div class="ops"><span class="read">READ</span></div></div>
+                            <div class="repl-node replica"><div class="icon">&#128451;</div><div class="label">Replica 3</div><div class="ops"><span class="read">READ</span></div></div>
+                        </div>
+                    </div>
+
+                    <div class="table-wrap">
+                        <table class="compare-table">
+                            <tr><th>Mode</th><th>How It Works</th><th>Consistency</th><th>Speed</th><th>Use Case</th></tr>
+                            <tr><td><b>Synchronous</b></td><td>Write waits for all replicas</td><td class="y">Strong</td><td class="n">Slow</td><td>Banking, payments</td></tr>
+                            <tr><td><b>Asynchronous</b></td><td>Write returns after primary</td><td class="m">Eventual</td><td class="y">Fast</td><td>Social feeds, analytics</td></tr>
+                            <tr><td><b>Semi-sync</b></td><td>Write waits for 1+ replica</td><td class="m">Tunable</td><td class="m">Medium</td><td>E-commerce, SaaS</td></tr>
+                        </table>
+                    </div>
+
+                    <p><b>The GitLab lesson (2017):</b> An engineer deleted the production database. All 5 backup methods had silently failed. They recovered from a 6-hour-old snapshot found by luck. <b>If you haven't tested restoring your backup, you don't have a backup.</b></p>
+                </div>
+            </div>
+        </div>
+
+        <!-- 6: CONSISTENCY -->
+        <div class="section-block" id="consistency">
+            <div class="section-card">
+                <div class="section-header">
+                    <div class="section-icon" style="background: linear-gradient(135deg, var(--orange), var(--red));">&#9878;</div>
+                    <div class="section-header-text">
+                        <h2>Consistency Models</h2>
+                        <div class="subtitle">Not everything needs to be perfectly in sync</div>
+                    </div>
+                </div>
+                <div class="section-body">
+                    <p>Consistency isn't binary. It's a <b>spectrum</b> &mdash; and the right level depends on the operation, not the database.</p>
+
+                    <div class="analogy"><b>Analogy:</b> Strong consistency is a live broadcast &mdash; everyone sees events at the same time. Eventual consistency is a newspaper &mdash; everyone gets the news, just not all at once.</div>
+
+                    <div class="spectrum">
+                        <div class="title">The Consistency Spectrum</div>
+                        <div class="spectrum-bar"></div>
+                        <div class="spectrum-labels">
+                            <div class="spectrum-label"><div class="name" style="color: var(--green);">Strong</div><div class="desc">Every read = latest write</div><div class="example">Bank balance</div></div>
+                            <div class="spectrum-label"><div class="name" style="color: var(--cyan);">Causal</div><div class="desc">Related ops in order</div><div class="example">Chat messages</div></div>
+                            <div class="spectrum-label"><div class="name" style="color: var(--orange);">Read-your-writes</div><div class="desc">You see your own updates</div><div class="example">Profile edits</div></div>
+                            <div class="spectrum-label"><div class="name" style="color: var(--red);">Eventual</div><div class="desc">Replicas converge over time</div><div class="example">Like counts</div></div>
+                        </div>
+                    </div>
+
+                    <div class="table-wrap">
+                        <table class="compare-table">
+                            <tr><th>Operation</th><th>Consistency Level</th><th>Why</th></tr>
+                            <tr><td><b>Payment processing</b></td><td class="y">Strong</td><td>Can't double-charge or lose money</td></tr>
+                            <tr><td><b>Chat messages</b></td><td style="color: var(--cyan); font-weight: 700;">Causal</td><td>Replies must appear after the message</td></tr>
+                            <tr><td><b>Profile update</b></td><td class="m">Read-your-writes</td><td>User must see their own changes</td></tr>
+                            <tr><td><b>Like count</b></td><td class="n">Eventual</td><td>Off by a few for seconds is fine</td></tr>
+                            <tr><td><b>Leaderboard</b></td><td class="n">Eventual</td><td>Near-real-time is good enough</td></tr>
+                        </table>
+                    </div>
+
+                    <p><b>The golden rule:</b> use the <b>weakest consistency your operation can tolerate</b>. Every step stronger = more latency and less throughput. Consistency is not a database choice &mdash; it's a per-operation choice.</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- 7: TAKEAWAYS -->
+        <div class="section-block" id="takeaways">
+            <div class="section-card">
+                <div class="section-header">
+                    <div class="section-icon" style="background: linear-gradient(135deg, var(--green), var(--cyan));">&#127919;</div>
+                    <div class="section-header-text">
+                        <h2>Key Takeaways</h2>
+                        <div class="subtitle">Design decisions that outlive your sprint</div>
+                    </div>
+                </div>
+                <div class="section-body">
+                    <div class="takeaways">
+                        <div class="tk"><div class="tk-icon">&#128269;</div><h4>Access Patterns First</h4><p>SQL vs NoSQL is the wrong question. Start with how your app reads and writes data.</p></div>
+                        <div class="tk"><div class="tk-icon">&#128200;</div><h4>Index Strategically</h4><p>A missing index is a time bomb. Too many indexes slow every write. Use EXPLAIN ANALYZE.</p></div>
+                        <div class="tk"><div class="tk-icon">&#128256;</div><h4>Shard When You Must</h4><p>Notion ran one Postgres for years. Don't shard prematurely &mdash; but plan your shard key early.</p></div>
+                        <div class="tk"><div class="tk-icon">&#9878;</div><h4>Consistency Per Operation</h4><p>Bank balance = strong. Like count = eventual. Match the model to the operation.</p></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <footer>
+        <div class="gradient-line"></div>
+        <p>System Design for Dummies &mdash; Chapter 3: Database Design</p>
+        <div style="margin-top: 1.5rem; display: flex; gap: 1rem; justify-content: center;">
+            <a href="chapter2.html" class="nav-btn" style="background: var(--bg-card); border: 1px solid var(--border);">&larr; Ch 2: Integer Overflow</a>
+            <a href="index.html" class="nav-btn">All Chapters</a>
+        </div>
+    </footer>
+
+    <script>
+        const blocks = document.querySelectorAll('.section-block');
+        const observer = new IntersectionObserver((entries) => {
+            entries.forEach(entry => { if (entry.isIntersecting) entry.target.classList.add('visible'); });
+        }, { threshold: 0.1 });
+        blocks.forEach(b => observer.observe(b));
+
+        const sidebarLinks = document.querySelectorAll('.sidebar a');
+        const sections = document.querySelectorAll('[id]');
+        window.addEventListener('scroll', () => {
+            let current = '';
+            sections.forEach(section => {
+                if (window.scrollY >= section.offsetTop - 200) current = section.getAttribute('id');
+            });
+            sidebarLinks.forEach(link => {
+                link.classList.remove('active');
+                if (link.getAttribute('href') === '#' + current) link.classList.add('active');
+            });
+        });
+    </script>
+
+    <script>
+        if (new URLSearchParams(window.location.search).has('print')) {
+            const s = document.createElement('style');
+            s.textContent = `
+                .section-block { opacity:1!important; transform:none!important; transition:none!important; }
+                nav, .sidebar { position:relative!important; }
+                .sidebar { display:none!important; }
+                nav { display:none!important; }
+
+                @media print {
+                    * { -webkit-print-color-adjust:exact!important; print-color-adjust:exact!important; }
+                    body { background: var(--bg)!important; }
+
+                    /* Title page: centered, full page */
+                    .chapter-hero {
+                        min-height: 100vh!important;
+                        display: flex!important;
+                        flex-direction: column!important;
+                        align-items: center!important;
+                        justify-content: center!important;
+                        padding: 2rem!important;
+                        page-break-after: always!important;
+                    }
+
+                    /* Each section on its own page */
+                    .section-block {
+                        page-break-before: always!important;
+                        page-break-inside: avoid!important;
+                    }
+
+                    /* Prevent cards from splitting */
+                    .section-card {
+                        page-break-inside: avoid!important;
+                    }
+                    .vs-section, .feat-grid, .stats-row, .takeaways,
+                    .index-visual, .shard-visual, .repl-visual,
+                    .spectrum, .table-wrap, .incident-hero, .analogy {
+                        page-break-inside: avoid!important;
+                    }
+
+                    /* Hide non-essential print elements */
+                    footer { page-break-before: always!important; }
+                    .content-section { padding: 0 2rem!important; }
+                }
+            `;
+            document.head.appendChild(s);
+            document.querySelectorAll('.section-block').forEach(el => {
+                el.style.setProperty('opacity','1','important');
+                el.style.setProperty('transform','none','important');
+                el.classList.add('visible');
+            });
+            window.addEventListener('load', () => setTimeout(() => window.print(), 500));
+        }
+    </script>
+
+</body>
+</html>
