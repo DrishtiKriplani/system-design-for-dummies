@@ -1,0 +1,676 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ch 4: CAP Theorem &mdash; System Design for Dummies</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧠</text></svg>">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap');
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        :root {
+            --bg: #0f172a; --bg-card: #1e293b; --bg-code: #0d1117;
+            --text: #f8fafc; --text-muted: #94a3b8; --text-dim: #64748b;
+            --border: #334155; --blue: #3b82f6; --green: #10b981;
+            --orange: #f59e0b; --purple: #8b5cf6; --pink: #ec4899;
+            --red: #ef4444; --cyan: #06b6d4; --indigo: #6366f1;
+        }
+        html { scroll-behavior: smooth; scrollbar-width: thin; scrollbar-color: var(--border) var(--bg); }
+        body { font-family: 'Inter', -apple-system, sans-serif; background: var(--bg); color: var(--text); line-height: 1.6; overflow-x: hidden; }
+
+        /* ===== NAV ===== */
+        nav { position: fixed; top: 0; left: 0; right: 0; z-index: 100; background: rgba(15,23,42,0.85); backdrop-filter: blur(20px); border-bottom: 1px solid rgba(51,65,85,0.5); }
+        .nav-inner { max-width: 1100px; margin: 0 auto; padding: 0.65rem 2rem; display: flex; align-items: center; justify-content: space-between; }
+        .nav-left { display: flex; align-items: center; gap: 1rem; }
+        .nav-logo { display: flex; align-items: center; gap: 0.6rem; font-weight: 800; font-size: 0.95rem; text-decoration: none; color: var(--text); letter-spacing: -0.5px; }
+        .nav-logo-icon { width: 28px; height: 28px; border-radius: 7px; background: linear-gradient(135deg, var(--blue), var(--purple)); display: flex; align-items: center; justify-content: center; font-size: 0.65rem; font-weight: 900; color: white; }
+        .nav-logo span { background: linear-gradient(135deg, var(--blue), var(--purple)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        .nav-sep { width: 1px; height: 18px; background: var(--border); }
+        .nav-chapter-badge { display: flex; align-items: center; gap: 0.4rem; font-size: 0.72rem; font-weight: 600; color: var(--orange); background: rgba(245,158,11,0.08); border: 1px solid rgba(245,158,11,0.15); padding: 0.2rem 0.7rem; border-radius: 50px; }
+        .nav-chapter-badge .dot { width: 5px; height: 5px; border-radius: 50%; background: var(--orange); }
+        .nav-center { display: flex; gap: 0.25rem; }
+        .nav-center a { color: var(--text-muted); text-decoration: none; font-size: 0.78rem; font-weight: 500; padding: 0.35rem 0.7rem; border-radius: 6px; transition: all 0.2s; }
+        .nav-center a:hover { color: var(--text); background: rgba(245,158,11,0.1); }
+        .nav-right { display: flex; align-items: center; }
+        .nav-counter { font-family: 'JetBrains Mono', monospace; font-size: 0.72rem; color: var(--text-dim); background: var(--bg-card); padding: 0.25rem 0.6rem; border-radius: 20px; border: 1px solid var(--border); }
+
+        /* ===== SIDEBAR ===== */
+        .sidebar { position: fixed; left: 1.2rem; top: 50%; transform: translateY(-50%); z-index: 50; display: flex; flex-direction: column; gap: 4px; }
+        .sidebar a { width: 8px; height: 8px; border-radius: 50%; background: var(--border); transition: all 0.3s; display: block; position: relative; }
+        .sidebar a:hover { background: var(--text-muted); transform: scale(1.5); }
+        .sidebar a.active { background: var(--orange); box-shadow: 0 0 8px rgba(245,158,11,0.5); transform: scale(1.5); }
+        .sidebar a .tooltip { position: absolute; left: 18px; top: 50%; transform: translateY(-50%); background: var(--bg-card); color: var(--text); padding: 0.3rem 0.7rem; border-radius: 6px; font-size: 0.65rem; white-space: nowrap; opacity: 0; pointer-events: none; transition: opacity 0.2s; border: 1px solid var(--border); }
+        .sidebar a:hover .tooltip { opacity: 1; }
+
+        /* ===== HERO ===== */
+        .chapter-hero { padding: 8rem 2rem 4rem; text-align: center; position: relative; overflow: hidden; }
+        .chapter-hero-bg { position: absolute; inset: 0; background: radial-gradient(ellipse at 30% 50%, rgba(245,158,11,0.1) 0%, transparent 60%), radial-gradient(ellipse at 70% 30%, rgba(239,68,68,0.08) 0%, transparent 50%); }
+        .chapter-hero-content { position: relative; max-width: 700px; margin: 0 auto; }
+        .chapter-label { display: inline-flex; align-items: center; gap: 0.5rem; font-size: 0.75rem; font-weight: 600; text-transform: uppercase; letter-spacing: 2px; color: var(--orange); margin-bottom: 1.2rem; }
+        .chapter-label .ch-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--orange); }
+        .chapter-hero h1 { font-size: clamp(2rem, 5vw, 3rem); font-weight: 900; letter-spacing: -1.5px; line-height: 1.15; margin-bottom: 0.8rem; }
+        .chapter-hero h1 .gradient { background: linear-gradient(135deg, var(--orange), var(--red)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        .chapter-hero-content > p { color: var(--text-muted); font-size: 1.05rem; max-width: 520px; margin: 0 auto; line-height: 1.7; }
+        .chapter-tags { display: flex; justify-content: center; gap: 0.5rem; flex-wrap: wrap; margin-top: 1.8rem; }
+        .chapter-tag { padding: 0.3rem 0.85rem; border-radius: 50px; font-size: 0.7rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
+
+        /* ===== SECTIONS ===== */
+        .content-section { max-width: 900px; margin: 0 auto; padding: 2rem 2rem 4rem; }
+        .section-block { position: relative; margin-bottom: 4rem; opacity: 0; transform: translateY(30px); transition: all 0.6s cubic-bezier(0.16, 1, 0.3, 1); }
+        .section-block.visible { opacity: 1; transform: translateY(0); }
+        .section-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 16px; overflow: hidden; }
+        .section-header { padding: 1.5rem 2rem 1rem; display: flex; align-items: flex-start; gap: 1rem; }
+        .section-icon { width: 44px; height: 44px; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 1.2rem; flex-shrink: 0; }
+        .section-header-text h2 { font-size: 1.3rem; font-weight: 800; letter-spacing: -0.5px; margin-bottom: 0.2rem; }
+        .section-header-text .subtitle { font-size: 0.85rem; color: var(--text-muted); line-height: 1.6; }
+        .section-body { padding: 0.5rem 2rem 2rem; }
+        .section-body p { color: var(--text-muted); font-size: 0.92rem; line-height: 1.8; margin-bottom: 1.2rem; }
+        .section-body p b { color: var(--text); }
+
+        /* ── Incident Hero ── */
+        .incident-hero { background: linear-gradient(135deg, rgba(245,158,11,0.08), rgba(239,68,68,0.05)); border: 1px solid rgba(245,158,11,0.15); border-radius: 14px; padding: 2rem; text-align: center; margin-bottom: 1.5rem; }
+        .incident-hero .big-number { font-family: 'JetBrains Mono', monospace; font-size: 2.5rem; font-weight: 800; background: linear-gradient(135deg, var(--orange), var(--red)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; margin: 0.8rem 0; line-height: 1.2; }
+        .stats-row { display: flex; gap: 1rem; margin: 1.5rem 0; }
+        .stat-pill { flex: 1; background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; padding: 1rem; text-align: center; }
+        .stat-pill .icon { font-size: 1.3rem; margin-bottom: 0.4rem; }
+        .stat-pill .val { font-family: 'JetBrains Mono', monospace; font-size: 1.3rem; font-weight: 800; background: linear-gradient(135deg, var(--orange), var(--red)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        .stat-pill .lbl { font-size: 0.65rem; color: var(--text-dim); text-transform: uppercase; letter-spacing: 1px; margin-top: 0.2rem; }
+
+        /* ── CAP Triangle ── */
+        .cap-triangle { background: var(--bg-code); border-radius: 14px; padding: 2rem; margin: 1.5rem 0; border: 1px solid var(--border); text-align: center; }
+        .cap-triangle .title { font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: var(--text-dim); margin-bottom: 1.5rem; }
+        .triangle-container { position: relative; width: 320px; height: 280px; margin: 0 auto; }
+        .cap-node { position: absolute; width: 90px; height: 90px; border-radius: 50%; display: flex; flex-direction: column; align-items: center; justify-content: center; font-weight: 800; font-size: 1.6rem; transition: all 0.3s; }
+        .cap-node .cap-label { font-size: 0.6rem; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; margin-top: 0.2rem; }
+        .cap-node.c-node { top: 0; left: 50%; transform: translateX(-50%); background: linear-gradient(135deg, rgba(16,185,129,0.15), rgba(16,185,129,0.05)); border: 2px solid rgba(16,185,129,0.4); color: var(--green); }
+        .cap-node.a-node { bottom: 0; left: 0; background: linear-gradient(135deg, rgba(59,130,246,0.15), rgba(59,130,246,0.05)); border: 2px solid rgba(59,130,246,0.4); color: var(--blue); }
+        .cap-node.p-node { bottom: 0; right: 0; background: linear-gradient(135deg, rgba(239,68,68,0.15), rgba(239,68,68,0.05)); border: 2px solid rgba(239,68,68,0.4); color: var(--red); }
+        .triangle-lines { position: absolute; inset: 0; }
+        .triangle-lines svg { width: 100%; height: 100%; }
+        .triangle-lines line { stroke: var(--border); stroke-width: 1.5; stroke-dasharray: 6 4; }
+        .cap-edge-label { position: absolute; font-size: 0.6rem; font-weight: 700; padding: 0.2rem 0.5rem; border-radius: 4px; background: var(--bg-code); border: 1px solid var(--border); }
+        .cap-edge-label.cp { top: 45%; left: 12%; color: var(--green); }
+        .cap-edge-label.ap { bottom: 8%; left: 50%; transform: translateX(-50%); color: var(--blue); }
+        .cap-edge-label.ca { top: 45%; right: 12%; color: var(--orange); }
+        .cap-note { margin-top: 1.2rem; font-size: 0.78rem; color: var(--text-dim); }
+        .cap-note b { color: var(--orange); }
+
+        /* ── Partition Visual ── */
+        .partition-visual { background: var(--bg-code); border-radius: 14px; padding: 1.5rem; margin: 1.5rem 0; border: 1px solid var(--border); }
+        .partition-visual .title { font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: var(--text-dim); margin-bottom: 1rem; text-align: center; }
+        .partition-diagram { display: flex; align-items: center; justify-content: center; gap: 0.5rem; flex-wrap: wrap; }
+        .dc-box { border-radius: 14px; padding: 1.2rem; text-align: center; min-width: 140px; }
+        .dc-box.dc1 { background: linear-gradient(180deg, rgba(59,130,246,0.1), rgba(59,130,246,0.03)); border: 2px solid rgba(59,130,246,0.3); }
+        .dc-box.dc2 { background: linear-gradient(180deg, rgba(16,185,129,0.1), rgba(16,185,129,0.03)); border: 2px solid rgba(16,185,129,0.3); }
+        .dc-box .dc-icon { font-size: 1.5rem; }
+        .dc-box .dc-label { font-size: 0.72rem; font-weight: 700; margin-top: 0.3rem; }
+        .dc-box.dc1 .dc-label { color: #93c5fd; }
+        .dc-box.dc2 .dc-label { color: #6ee7b7; }
+        .dc-box .dc-data { font-family: 'JetBrains Mono', monospace; font-size: 0.68rem; color: var(--text-dim); margin-top: 0.3rem; padding: 0.3rem 0.6rem; background: var(--bg); border-radius: 6px; }
+        .partition-break { display: flex; flex-direction: column; align-items: center; gap: 0.3rem; min-width: 80px; }
+        .partition-break .lightning { font-size: 1.8rem; animation: flash 1.5s ease-in-out infinite; }
+        @keyframes flash { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+        .partition-break .break-label { font-size: 0.6rem; font-weight: 700; color: var(--red); text-transform: uppercase; letter-spacing: 1px; }
+        .partition-break .break-line { width: 60px; height: 2px; background: repeating-linear-gradient(90deg, var(--red), var(--red) 4px, transparent 4px, transparent 8px); }
+
+        /* ── Choice Cards (CP vs AP) ── */
+        .choice-section { display: flex; gap: 1rem; margin: 1.5rem 0; align-items: stretch; }
+        .choice-card { flex: 1; border-radius: 14px; padding: 1.5rem; position: relative; overflow: hidden; }
+        .choice-card::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px; }
+        .choice-card.cp { background: rgba(16,185,129,0.04); border: 1px solid rgba(16,185,129,0.12); }
+        .choice-card.cp::before { background: linear-gradient(90deg, transparent, var(--green), transparent); }
+        .choice-card.ap { background: rgba(59,130,246,0.04); border: 1px solid rgba(59,130,246,0.12); }
+        .choice-card.ap::before { background: linear-gradient(90deg, transparent, var(--blue), transparent); }
+        .choice-card .card-icon { font-size: 1.8rem; margin-bottom: 0.8rem; }
+        .choice-card h3 { font-size: 1.1rem; font-weight: 700; margin-bottom: 0.4rem; }
+        .choice-card.cp h3 { color: #6ee7b7; }
+        .choice-card.ap h3 { color: #93c5fd; }
+        .choice-card p { font-size: 0.82rem; color: var(--text-muted); line-height: 1.6; }
+        .choice-card ul { list-style: none; margin-top: 0.6rem; }
+        .choice-card ul li { font-size: 0.8rem; color: var(--text-muted); padding: 0.25rem 0; }
+        .choice-card ul li b { color: var(--text); }
+        .choice-card .who { margin-top: 0.8rem; font-size: 0.7rem; color: var(--text-dim); }
+        .choice-card .who span { font-weight: 700; }
+        .choice-card.cp .who span { color: #6ee7b7; }
+        .choice-card.ap .who span { color: #93c5fd; }
+        .choice-divider { display: flex; align-items: center; justify-content: center; min-width: 40px; }
+        .choice-badge { background: linear-gradient(135deg, var(--orange), var(--red)); color: white; font-size: 0.75rem; font-weight: 800; width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; box-shadow: 0 0 20px rgba(245,158,11,0.3); }
+
+        /* ── System Map ── */
+        .system-map { background: var(--bg-code); border-radius: 14px; padding: 1.5rem; margin: 1.5rem 0; border: 1px solid var(--border); }
+        .system-map .title { font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: var(--text-dim); margin-bottom: 1rem; text-align: center; }
+        .map-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0.6rem; }
+        .map-item { border-radius: 10px; padding: 0.8rem; text-align: center; }
+        .map-item.cp-item { background: rgba(16,185,129,0.06); border: 1px solid rgba(16,185,129,0.15); }
+        .map-item.ap-item { background: rgba(59,130,246,0.06); border: 1px solid rgba(59,130,246,0.15); }
+        .map-item.ca-item { background: rgba(245,158,11,0.06); border: 1px solid rgba(245,158,11,0.15); }
+        .map-item .map-icon { font-size: 1.2rem; margin-bottom: 0.3rem; }
+        .map-item .map-name { font-size: 0.75rem; font-weight: 700; }
+        .map-item.cp-item .map-name { color: #6ee7b7; }
+        .map-item.ap-item .map-name { color: #93c5fd; }
+        .map-item.ca-item .map-name { color: #fcd34d; }
+        .map-item .map-type { font-size: 0.58rem; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.8px; font-weight: 600; margin-top: 0.15rem; }
+
+        /* ── Interview Box ── */
+        .interview-box { background: linear-gradient(135deg, rgba(245,158,11,0.06), rgba(239,68,68,0.04)); border: 1px solid rgba(245,158,11,0.15); border-radius: 14px; padding: 1.5rem; margin: 1.5rem 0; }
+        .interview-box .q { font-size: 0.85rem; font-weight: 700; color: var(--text); margin-bottom: 0.5rem; padding-left: 1rem; border-left: 3px solid var(--orange); }
+        .interview-box .a { font-size: 0.82rem; color: var(--text-muted); line-height: 1.7; margin-top: 0.8rem; padding-left: 1rem; border-left: 3px solid var(--green); }
+        .interview-box .wrong { font-size: 0.82rem; color: var(--text-muted); line-height: 1.7; margin-top: 0.8rem; padding-left: 1rem; border-left: 3px solid var(--red); }
+        .interview-box .wrong b { color: #fca5a5; }
+        .interview-box .a b { color: #6ee7b7; }
+        .interview-box .label { font-size: 0.62rem; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 0.3rem; }
+        .interview-box .label.bad { color: var(--red); }
+        .interview-box .label.good { color: var(--green); }
+
+        /* ── Decision Flow ── */
+        .decision-flow { background: var(--bg-code); border-radius: 14px; padding: 1.5rem; margin: 1.5rem 0; border: 1px solid var(--border); }
+        .decision-flow .title { font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: var(--text-dim); margin-bottom: 1rem; text-align: center; }
+        .flow-steps { display: flex; flex-direction: column; gap: 0.6rem; max-width: 500px; margin: 0 auto; }
+        .flow-step { display: flex; align-items: center; gap: 0.8rem; padding: 0.8rem 1rem; border-radius: 10px; }
+        .flow-step.question { background: rgba(245,158,11,0.06); border: 1px solid rgba(245,158,11,0.15); }
+        .flow-step.answer-cp { background: rgba(16,185,129,0.06); border: 1px solid rgba(16,185,129,0.15); }
+        .flow-step.answer-ap { background: rgba(59,130,246,0.06); border: 1px solid rgba(59,130,246,0.15); }
+        .flow-num { width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 0.72rem; font-weight: 800; flex-shrink: 0; }
+        .flow-step.question .flow-num { background: rgba(245,158,11,0.15); color: var(--orange); }
+        .flow-step.answer-cp .flow-num { background: rgba(16,185,129,0.15); color: var(--green); }
+        .flow-step.answer-ap .flow-num { background: rgba(59,130,246,0.15); color: var(--blue); }
+        .flow-text { font-size: 0.8rem; color: var(--text-muted); line-height: 1.5; }
+        .flow-text b { color: var(--text); }
+        .flow-arrow { text-align: center; color: var(--text-dim); font-size: 0.9rem; }
+
+        /* ── Feature Grid ── */
+        .feat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.8rem; margin: 1.5rem 0; }
+        .feat-card { background: rgba(30,41,59,0.5); border: 1px solid var(--border); border-radius: 12px; padding: 1.2rem; display: flex; gap: 0.8rem; align-items: flex-start; }
+        .feat-card .feat-icon { font-size: 1.4rem; flex-shrink: 0; }
+        .feat-card h4 { font-size: 0.88rem; font-weight: 700; margin-bottom: 0.2rem; }
+        .feat-card p { font-size: 0.8rem; color: var(--text-dim); line-height: 1.5; margin: 0; }
+
+        /* ── Comparison Table ── */
+        .table-wrap { border-radius: 12px; overflow: hidden; margin: 1.5rem 0; border: 1px solid var(--border); }
+        .compare-table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+        .compare-table th { background: var(--bg-card); color: var(--text-muted); padding: 0.8rem 1rem; text-align: left; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; font-size: 0.68rem; border-bottom: 2px solid var(--border); }
+        .compare-table td { padding: 0.7rem 1rem; border-bottom: 1px solid rgba(51,65,85,0.5); color: var(--text-muted); }
+        .compare-table tr:nth-child(even) td { background: rgba(15,23,42,0.3); }
+        .compare-table tr:last-child td { border-bottom: none; }
+        .y { color: var(--green); font-weight: 700; }
+        .n { color: #fca5a5; font-weight: 700; }
+        .m { color: var(--orange); font-weight: 700; }
+
+        /* ── Analogy Box ── */
+        .analogy { background: rgba(245,158,11,0.05); border: 1px solid rgba(245,158,11,0.12); border-radius: 10px; padding: 1rem 1.2rem; margin: 1rem 0; font-size: 0.82rem; color: var(--text-muted); line-height: 1.6; }
+        .analogy b { color: #fcd34d; }
+
+        /* ── Takeaways ── */
+        .takeaways { display: flex; gap: 1rem; margin: 1.5rem 0; }
+        .tk { flex: 1; background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; padding: 1.3rem; position: relative; overflow: hidden; }
+        .tk::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px; }
+        .tk:nth-child(1)::before { background: linear-gradient(90deg, var(--orange), var(--red)); }
+        .tk:nth-child(2)::before { background: linear-gradient(90deg, var(--green), var(--cyan)); }
+        .tk:nth-child(3)::before { background: linear-gradient(90deg, var(--blue), var(--purple)); }
+        .tk:nth-child(4)::before { background: linear-gradient(90deg, var(--pink), var(--red)); }
+        .tk .tk-icon { font-size: 1.3rem; margin-bottom: 0.5rem; }
+        .tk h4 { font-size: 0.9rem; font-weight: 700; margin-bottom: 0.3rem; }
+        .tk p { font-size: 0.8rem; color: var(--text-dim); line-height: 1.6; }
+
+        /* ===== FOOTER ===== */
+        footer { border-top: 1px solid var(--border); padding: 3rem 2rem; text-align: center; }
+        footer p { color: var(--text-dim); font-size: 0.85rem; }
+        footer .gradient-line { width: 100px; height: 3px; background: linear-gradient(90deg, var(--orange), var(--red), var(--pink)); margin: 0 auto 1.5rem; border-radius: 2px; }
+        .nav-btn { display: inline-flex; align-items: center; gap: 0.5rem; padding: 0.7rem 1.5rem; background: linear-gradient(135deg, var(--orange), var(--red)); color: white; border: none; border-radius: 10px; font-size: 0.9rem; font-weight: 600; cursor: pointer; text-decoration: none; transition: all 0.3s; margin-top: 1rem; }
+        .nav-btn:hover { transform: translateY(-2px); box-shadow: 0 8px 30px rgba(245,158,11,0.3); }
+
+        @media (max-width: 768px) {
+            .sidebar { display: none; }
+            .nav-center { display: none; }
+            .choice-section { flex-direction: column; }
+            .choice-divider { min-width: 0; padding: 0.5rem 0; }
+            .feat-grid { grid-template-columns: 1fr; }
+            .takeaways { flex-direction: column; }
+            .stats-row { flex-wrap: wrap; }
+            .stat-pill { min-width: calc(50% - 0.5rem); }
+            .triangle-container { width: 260px; height: 240px; }
+            .cap-node { width: 70px; height: 70px; font-size: 1.2rem; }
+            .cap-node .cap-label { font-size: 0.5rem; }
+            .map-grid { grid-template-columns: 1fr 1fr; }
+            .partition-diagram { flex-direction: column; align-items: center; }
+            .flow-steps { max-width: 100%; }
+        }
+    </style>
+</head>
+<body>
+
+    <nav>
+        <div class="nav-inner">
+            <div class="nav-left">
+                <a href="index.html" class="nav-logo"><div class="nav-logo-icon">SD</div><span>System Design for Dummies</span></a>
+                <div class="nav-sep"></div>
+                <div class="nav-chapter-badge"><div class="dot"></div>Chapter 4</div>
+            </div>
+            <div class="nav-center">
+                <a href="index.html">Home</a>
+                <a href="chapter1.html">Ch 1</a>
+                <a href="chapter2.html">Ch 2</a>
+                <a href="chapter3.html">Ch 3</a>
+            </div>
+            <div class="nav-right"><span class="nav-counter">7 sections</span></div>
+        </div>
+    </nav>
+
+    <div class="sidebar" id="sidebar">
+        <a href="#hero"><span class="tooltip">Intro</span></a>
+        <a href="#the-problem"><span class="tooltip">The Problem</span></a>
+        <a href="#cap-explained"><span class="tooltip">C, A &amp; P</span></a>
+        <a href="#partition"><span class="tooltip">The Partition</span></a>
+        <a href="#cp-vs-ap"><span class="tooltip">CP vs AP</span></a>
+        <a href="#real-systems"><span class="tooltip">Real Systems</span></a>
+        <a href="#interview"><span class="tooltip">The Interview</span></a>
+        <a href="#takeaways"><span class="tooltip">Takeaways</span></a>
+    </div>
+
+    <!-- Hero -->
+    <section class="chapter-hero" id="hero">
+        <div class="chapter-hero-bg"></div>
+        <div class="chapter-hero-content">
+            <div class="chapter-label"><div class="ch-dot"></div>Chapter 04 &mdash; Deep Dive</div>
+            <h1>The <span class="gradient">CAP Theorem</span><br>Pick Two. Or Do You?</h1>
+            <p>Two guests. One hotel room. A network failure in between. The tradeoff every distributed system must face.</p>
+            <div class="chapter-tags">
+                <span class="chapter-tag" style="background: rgba(16,185,129,0.1); color: var(--green); border: 1px solid rgba(16,185,129,0.2);">Consistency</span>
+                <span class="chapter-tag" style="background: rgba(59,130,246,0.1); color: var(--blue); border: 1px solid rgba(59,130,246,0.2);">Availability</span>
+                <span class="chapter-tag" style="background: rgba(239,68,68,0.1); color: var(--red); border: 1px solid rgba(239,68,68,0.2);">Partition Tolerance</span>
+            </div>
+        </div>
+    </section>
+
+    <div class="content-section">
+
+        <!-- 1: THE PROBLEM -->
+        <div class="section-block" id="the-problem">
+            <div class="section-card">
+                <div class="section-header">
+                    <div class="section-icon" style="background: linear-gradient(135deg, var(--red), var(--orange));">&#9889;</div>
+                    <div class="section-header-text">
+                        <h2>The Hotel Room Problem</h2>
+                        <div class="subtitle">New Year's Eve. Times Square. One room left.</div>
+                    </div>
+                </div>
+                <div class="section-body">
+                    <div class="incident-hero">
+                        <p style="color: var(--text-muted); font-size: 0.95rem;">Two guests open the booking app at the same time. Both see "1 room available." Both click "Book Now."</p>
+                        <div class="big-number">Who gets the room?</div>
+                        <p style="color: var(--text-muted); font-size: 0.95rem;">The hotel runs servers in <b style="color: #93c5fd;">US-East</b> and <b style="color: #6ee7b7;">US-West</b>. A network cable between them just got cut.</p>
+                    </div>
+                    <div class="stats-row">
+                        <div class="stat-pill"><div class="icon">&#127912;</div><div class="val">2</div><div class="lbl">Guests Booking</div></div>
+                        <div class="stat-pill"><div class="icon">&#128719;</div><div class="val">1</div><div class="lbl">Room Left</div></div>
+                        <div class="stat-pill"><div class="icon">&#9889;</div><div class="val">0</div><div class="lbl">Network Between DCs</div></div>
+                        <div class="stat-pill"><div class="icon">&#128337;</div><div class="val">?</div><div class="lbl">Correct Answer</div></div>
+                    </div>
+                    <p>The servers can't talk to each other. Now you have two options:</p>
+                    <p><b>Option A:</b> Both servers accept the booking. Two guests show up. One has no room. <b>You prioritized availability.</b></p>
+                    <p><b>Option B:</b> Both servers reject new bookings until the network heals. Nobody can book. <b>You prioritized consistency.</b></p>
+                    <p>There is no Option C. This is the CAP Theorem &mdash; and every distributed system in the world faces this choice.</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- 2: CAP EXPLAINED -->
+        <div class="section-block" id="cap-explained">
+            <div class="section-card">
+                <div class="section-header">
+                    <div class="section-icon" style="background: linear-gradient(135deg, var(--orange), var(--red));">&#9650;</div>
+                    <div class="section-header-text">
+                        <h2>C, A, and P</h2>
+                        <div class="subtitle">Three guarantees. You can only have two. Here's what each means.</div>
+                    </div>
+                </div>
+                <div class="section-body">
+                    <div class="cap-triangle">
+                        <div class="title">The CAP Triangle</div>
+                        <div class="triangle-container">
+                            <div class="triangle-lines">
+                                <svg viewBox="0 0 320 280">
+                                    <line x1="160" y1="45" x2="45" y2="235" />
+                                    <line x1="160" y1="45" x2="275" y2="235" />
+                                    <line x1="45" y1="235" x2="275" y2="235" />
+                                </svg>
+                            </div>
+                            <div class="cap-node c-node">C<div class="cap-label">Consistency</div></div>
+                            <div class="cap-node a-node">A<div class="cap-label">Availability</div></div>
+                            <div class="cap-node p-node">P<div class="cap-label">Partition<br>Tolerance</div></div>
+                            <div class="cap-edge-label cp">CP</div>
+                            <div class="cap-edge-label ap">AP</div>
+                            <div class="cap-edge-label ca">CA*</div>
+                        </div>
+                        <div class="cap-note">*CA only works on a single node &mdash; <b>no partition tolerance = no distribution</b></div>
+                    </div>
+
+                    <div class="feat-grid">
+                        <div class="feat-card">
+                            <div class="feat-icon" style="color: var(--green);">C</div>
+                            <div>
+                                <h4 style="color: var(--green);">Consistency</h4>
+                                <p>Every read returns the most recent write. All nodes see the same data at the same time. No stale reads, ever.</p>
+                            </div>
+                        </div>
+                        <div class="feat-card">
+                            <div class="feat-icon" style="color: var(--blue);">A</div>
+                            <div>
+                                <h4 style="color: var(--blue);">Availability</h4>
+                                <p>Every request gets a response (not an error). The system never says "try again later" &mdash; even if data might be stale.</p>
+                            </div>
+                        </div>
+                        <div class="feat-card">
+                            <div class="feat-icon" style="color: var(--red);">P</div>
+                            <div>
+                                <h4 style="color: var(--red);">Partition Tolerance</h4>
+                                <p>The system works even when network messages between nodes are dropped or delayed. Nodes can't communicate.</p>
+                            </div>
+                        </div>
+                        <div class="feat-card">
+                            <div class="feat-icon" style="color: var(--orange);">!</div>
+                            <div>
+                                <h4 style="color: var(--orange);">The Catch</h4>
+                                <p>In any distributed system, partitions WILL happen. So you're really choosing between <b>CP</b> and <b>AP</b>. CA is a fantasy in production.</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="analogy"><b>Analogy:</b> Imagine two librarians in different buildings managing the same book catalog. A storm knocks out the phone line between them (partition). Now: do they stop lending books until the line is fixed (consistency)? Or keep lending and risk giving out the same book twice (availability)?</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 3: THE PARTITION -->
+        <div class="section-block" id="partition">
+            <div class="section-card">
+                <div class="section-header">
+                    <div class="section-icon" style="background: linear-gradient(135deg, var(--red), var(--pink));">&#128268;</div>
+                    <div class="section-header-text">
+                        <h2>When The Network Splits</h2>
+                        <div class="subtitle">Partitions aren't theoretical. They happen every day.</div>
+                    </div>
+                </div>
+                <div class="section-body">
+                    <div class="partition-visual">
+                        <div class="title">Network Partition Between Data Centers</div>
+                        <div class="partition-diagram">
+                            <div class="dc-box dc1">
+                                <div class="dc-icon">&#127960;</div>
+                                <div class="dc-label">US-East (Virginia)</div>
+                                <div class="dc-data">rooms_available = 1</div>
+                            </div>
+                            <div class="partition-break">
+                                <div class="break-line"></div>
+                                <div class="lightning">&#9889;</div>
+                                <div class="break-label">Partition</div>
+                                <div class="break-line"></div>
+                            </div>
+                            <div class="dc-box dc2">
+                                <div class="dc-icon">&#127960;</div>
+                                <div class="dc-label">US-West (Oregon)</div>
+                                <div class="dc-data">rooms_available = 1</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <p>A <b>network partition</b> is when nodes in a distributed system can't communicate with each other. It doesn't mean the servers are down &mdash; they're alive and processing requests. They just can't sync.</p>
+
+                    <div class="table-wrap">
+                        <table class="compare-table">
+                            <tr><th>Cause</th><th>How Often</th><th>Duration</th><th>Example</th></tr>
+                            <tr><td><b>Network switch failure</b></td><td class="m">Weekly</td><td>Seconds to minutes</td><td>AWS us-east-1 2023</td></tr>
+                            <tr><td><b>Fiber cut</b></td><td class="m">Monthly</td><td>Minutes to hours</td><td>Undersea cable damage</td></tr>
+                            <tr><td><b>DNS misconfiguration</b></td><td class="m">Monthly</td><td>Minutes to hours</td><td>Cloudflare Nov 2025</td></tr>
+                            <tr><td><b>Cloud region isolation</b></td><td class="n">Rare</td><td>Hours</td><td>Snowflake Dec 2025</td></tr>
+                            <tr><td><b>GC pause (virtual partition)</b></td><td class="y">Constantly</td><td>Milliseconds</td><td>JVM stop-the-world</td></tr>
+                        </table>
+                    </div>
+
+                    <p>Google's Chubby team measured their distributed lock service and found: <b>network partitions caused 7.6% of all outages</b>. Not disk. Not CPU. The network.</p>
+
+                    <div class="analogy"><b>Key insight:</b> You don't choose whether partitions happen. You choose <b>what your system does when they happen</b>. That's the entire CAP theorem in one sentence.</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 4: CP vs AP -->
+        <div class="section-block" id="cp-vs-ap">
+            <div class="section-card">
+                <div class="section-header">
+                    <div class="section-icon" style="background: linear-gradient(135deg, var(--green), var(--blue));">&#9878;</div>
+                    <div class="section-header-text">
+                        <h2>CP vs AP: The Real Choice</h2>
+                        <div class="subtitle">Consistent and down, or available and wrong?</div>
+                    </div>
+                </div>
+                <div class="section-body">
+                    <div class="choice-section">
+                        <div class="choice-card cp">
+                            <div class="card-icon">&#128274;</div>
+                            <h3>CP &mdash; Consistency + Partition Tolerance</h3>
+                            <p>"I'd rather be <b>down</b> than <b>wrong</b>."</p>
+                            <ul>
+                                <li><b>Behavior:</b> During a partition, reject requests or wait until sync</li>
+                                <li><b>Tradeoff:</b> Some requests get errors or timeouts</li>
+                                <li><b>Best for:</b> Financial transactions, inventory, booking systems</li>
+                            </ul>
+                            <div class="who">Examples: <span>MongoDB (default) &middot; HBase &middot; Redis Cluster &middot; Zookeeper</span></div>
+                        </div>
+                        <div class="choice-divider"><div class="choice-badge">OR</div></div>
+                        <div class="choice-card ap">
+                            <div class="card-icon">&#127793;</div>
+                            <h3>AP &mdash; Availability + Partition Tolerance</h3>
+                            <p>"I'd rather be <b>wrong</b> than <b>down</b>."</p>
+                            <ul>
+                                <li><b>Behavior:</b> During a partition, serve requests with potentially stale data</li>
+                                <li><b>Tradeoff:</b> Nodes may return different answers temporarily</li>
+                                <li><b>Best for:</b> Social feeds, DNS, shopping carts, content delivery</li>
+                            </ul>
+                            <div class="who">Examples: <span>Cassandra &middot; DynamoDB &middot; CouchDB &middot; Riak</span></div>
+                        </div>
+                    </div>
+
+                    <p>Back to our hotel: A <b>CP system</b> would show "Service Unavailable" to both guests until servers reconnect. Nobody double-books, but some customers see errors. An <b>AP system</b> would let both book. When the network heals, one booking gets cancelled &mdash; with a free upgrade or refund.</p>
+
+                    <div class="analogy"><b>The business question:</b> What costs more &mdash; a double-booking you can fix in 5 minutes, or a frozen app on the busiest night of the year? Booking.com picks AP. Banks pick CP. Neither is wrong.</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 5: REAL SYSTEMS -->
+        <div class="section-block" id="real-systems">
+            <div class="section-card">
+                <div class="section-header">
+                    <div class="section-icon" style="background: linear-gradient(135deg, var(--purple), var(--indigo));">&#128506;</div>
+                    <div class="section-header-text">
+                        <h2>CAP in the Real World</h2>
+                        <div class="subtitle">How the systems you use every day make this tradeoff</div>
+                    </div>
+                </div>
+                <div class="section-body">
+                    <div class="system-map">
+                        <div class="title">Where Real Systems Fall on CAP</div>
+                        <div class="map-grid">
+                            <div class="map-item cp-item"><div class="map-icon">&#128451;</div><div class="map-name">MongoDB</div><div class="map-type">CP (default)</div></div>
+                            <div class="map-item cp-item"><div class="map-icon">&#128274;</div><div class="map-name">Zookeeper</div><div class="map-type">CP</div></div>
+                            <div class="map-item cp-item"><div class="map-icon">&#128200;</div><div class="map-name">HBase</div><div class="map-type">CP</div></div>
+                            <div class="map-item ap-item"><div class="map-icon">&#128195;</div><div class="map-name">Cassandra</div><div class="map-type">AP (tunable)</div></div>
+                            <div class="map-item ap-item"><div class="map-icon">&#9889;</div><div class="map-name">DynamoDB</div><div class="map-type">AP</div></div>
+                            <div class="map-item ap-item"><div class="map-icon">&#128230;</div><div class="map-name">CouchDB</div><div class="map-type">AP</div></div>
+                            <div class="map-item ca-item"><div class="map-icon">&#128024;</div><div class="map-name">PostgreSQL</div><div class="map-type">CA (single node)</div></div>
+                            <div class="map-item ca-item"><div class="map-icon">&#128172;</div><div class="map-name">MySQL</div><div class="map-type">CA (single node)</div></div>
+                            <div class="map-item ap-item"><div class="map-icon">&#127760;</div><div class="map-name">DNS</div><div class="map-type">AP</div></div>
+                        </div>
+                    </div>
+
+                    <div class="table-wrap">
+                        <table class="compare-table">
+                            <tr><th>System</th><th>Type</th><th>During Partition</th><th>Recovery</th></tr>
+                            <tr><td><b>Bank transfer</b></td><td class="y">CP</td><td>Transaction fails. "Try again."</td><td>No conflict &mdash; was never accepted</td></tr>
+                            <tr><td><b>Hotel booking</b></td><td class="m">AP / CP</td><td>Depends on business decision</td><td>Cancel + upgrade or block + retry</td></tr>
+                            <tr><td><b>Social media feed</b></td><td style="color: var(--blue); font-weight: 700;">AP</td><td>Show slightly stale feed</td><td>Feed refreshes on next pull</td></tr>
+                            <tr><td><b>Shopping cart</b></td><td style="color: var(--blue); font-weight: 700;">AP</td><td>Cart works offline, syncs later</td><td>Merge carts on reconnect</td></tr>
+                            <tr><td><b>Ride matching</b></td><td style="color: var(--blue); font-weight: 700;">AP</td><td>Assign driver, resolve conflicts</td><td>Reassign in seconds</td></tr>
+                        </table>
+                    </div>
+
+                    <p><b>Plot twist:</b> Most modern systems aren't purely CP or AP. Cassandra lets you set consistency <b>per query</b>: <code style="background: var(--bg-code); padding: 0.15rem 0.4rem; border-radius: 4px; font-family: 'JetBrains Mono', monospace; font-size: 0.8rem; color: var(--orange);">QUORUM</code> for payments, <code style="background: var(--bg-code); padding: 0.15rem 0.4rem; border-radius: 4px; font-family: 'JetBrains Mono', monospace; font-size: 0.8rem; color: var(--blue);">ONE</code> for analytics. DynamoDB offers both eventually consistent and strongly consistent reads. <b>CAP is a spectrum, not a switch.</b></p>
+                </div>
+            </div>
+        </div>
+
+        <!-- 6: THE INTERVIEW -->
+        <div class="section-block" id="interview">
+            <div class="section-card">
+                <div class="section-header">
+                    <div class="section-icon" style="background: linear-gradient(135deg, var(--orange), var(--red));">&#128188;</div>
+                    <div class="section-header-text">
+                        <h2>The System Design Interview</h2>
+                        <div class="subtitle">"Design a hotel booking system." Here's how to nail it.</div>
+                    </div>
+                </div>
+                <div class="section-body">
+                    <div class="interview-box">
+                        <div class="q">"Two users book the last room at the same hotel, same second. What happens?"</div>
+                        <div class="label bad">&#10008; THE REJECTED ANSWER</div>
+                        <div class="wrong">"I'll lock the room in the database. First transaction wins. Second user gets 'Room Unavailable.' During a network partition, both servers wait until they can sync. <b>No booking goes through until consistency is guaranteed.</b>"</div>
+                        <div style="margin-top: 0.5rem; font-size: 0.78rem; color: var(--text-dim);">Interviewer: "So during a network blip on New Year's Eve, with 10,000 people trying to book rooms in Times Square... your system just freezes?"</div>
+                    </div>
+
+                    <div class="interview-box" style="margin-top: 1rem;">
+                        <div class="q">Same question. Better answer.</div>
+                        <div class="label good">&#10004; THE STAFF-LEVEL ANSWER</div>
+                        <div class="a">"It depends on the business cost. For a hotel: <b>accept both bookings (AP), resolve the conflict async.</b> One guest gets a free upgrade or instant refund. On the busiest night of the year, a frozen app loses more revenue than a double-booking you fix in 3 minutes. But for a bank transfer? <b>I'd pick CP</b> &mdash; showing an error is better than transferring money twice."</div>
+                    </div>
+
+                    <div class="decision-flow">
+                        <div class="title">The CAP Decision Framework</div>
+                        <div class="flow-steps">
+                            <div class="flow-step question"><div class="flow-num">1</div><div class="flow-text"><b>Can users tolerate stale data?</b><br>Yes = lean AP. No = lean CP.</div></div>
+                            <div class="flow-arrow">&#8595;</div>
+                            <div class="flow-step question"><div class="flow-num">2</div><div class="flow-text"><b>What's the cost of being wrong?</b><br>Financial loss = CP. Bad UX = AP.</div></div>
+                            <div class="flow-arrow">&#8595;</div>
+                            <div class="flow-step question"><div class="flow-num">3</div><div class="flow-text"><b>Can conflicts be resolved after the fact?</b><br>Mergeable = AP. Not mergeable = CP.</div></div>
+                            <div class="flow-arrow">&#8595;</div>
+                            <div class="flow-step answer-cp"><div class="flow-num">CP</div><div class="flow-text"><b>Choose CP when:</b> money moves, inventory is critical, or conflicts can't be undone.</div></div>
+                            <div class="flow-step answer-ap"><div class="flow-num">AP</div><div class="flow-text"><b>Choose AP when:</b> stale data is tolerable, conflicts are resolvable, or downtime kills revenue.</div></div>
+                        </div>
+                    </div>
+
+                    <p><b>The golden phrase:</b> "What's more expensive &mdash; being wrong for 30 seconds, or being down for 30 seconds?" That one question in an interview shows you understand the business impact of CAP, not just the theory.</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- 7: TAKEAWAYS -->
+        <div class="section-block" id="takeaways">
+            <div class="section-card">
+                <div class="section-header">
+                    <div class="section-icon" style="background: linear-gradient(135deg, var(--green), var(--orange));">&#127919;</div>
+                    <div class="section-header-text">
+                        <h2>Key Takeaways</h2>
+                        <div class="subtitle">What to remember when CAP comes up in interviews or architecture reviews</div>
+                    </div>
+                </div>
+                <div class="section-body">
+                    <div class="takeaways">
+                        <div class="tk"><div class="tk-icon">&#9889;</div><h4>Partitions Are Guaranteed</h4><p>You don't choose P. You choose what happens when P occurs: sacrifice C or sacrifice A.</p></div>
+                        <div class="tk"><div class="tk-icon">&#128176;</div><h4>Think Business, Not Theory</h4><p>"What's the cost of being wrong vs being down?" is the only question that matters.</p></div>
+                        <div class="tk"><div class="tk-icon">&#128260;</div><h4>CAP Is a Spectrum</h4><p>Modern systems are tunable. Cassandra does per-query consistency. It's not a binary choice.</p></div>
+                        <div class="tk"><div class="tk-icon">&#128161;</div><h4>Design for Recovery</h4><p>The best systems don't just pick CP or AP &mdash; they design how to recover when things go wrong.</p></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <footer>
+        <div class="gradient-line"></div>
+        <p>System Design for Dummies &mdash; Chapter 4: CAP Theorem</p>
+        <div style="margin-top: 1.5rem; display: flex; gap: 1rem; justify-content: center;">
+            <a href="chapter3.html" class="nav-btn" style="background: var(--bg-card); border: 1px solid var(--border);">&larr; Ch 3: Database Design</a>
+            <a href="index.html" class="nav-btn">All Chapters</a>
+        </div>
+    </footer>
+
+    <script>
+        const blocks = document.querySelectorAll('.section-block');
+        const observer = new IntersectionObserver((entries) => {
+            entries.forEach(entry => { if (entry.isIntersecting) entry.target.classList.add('visible'); });
+        }, { threshold: 0.1 });
+        blocks.forEach(b => observer.observe(b));
+
+        const sidebarLinks = document.querySelectorAll('.sidebar a');
+        const sections = document.querySelectorAll('[id]');
+        window.addEventListener('scroll', () => {
+            let current = '';
+            sections.forEach(section => {
+                if (window.scrollY >= section.offsetTop - 200) current = section.getAttribute('id');
+            });
+            sidebarLinks.forEach(link => {
+                link.classList.remove('active');
+                if (link.getAttribute('href') === '#' + current) link.classList.add('active');
+            });
+        });
+    </script>
+
+    <script>
+        if (new URLSearchParams(window.location.search).has('print')) {
+            const s = document.createElement('style');
+            s.textContent = `
+                .section-block { opacity:1!important; transform:none!important; transition:none!important; }
+                nav, .sidebar { position:relative!important; }
+                .sidebar { display:none!important; }
+                nav { display:none!important; }
+
+                @media print {
+                    * { -webkit-print-color-adjust:exact!important; print-color-adjust:exact!important; }
+                    body { background: var(--bg)!important; }
+
+                    /* Title page: centered, full page */
+                    .chapter-hero {
+                        min-height: 100vh!important;
+                        display: flex!important;
+                        flex-direction: column!important;
+                        align-items: center!important;
+                        justify-content: center!important;
+                        padding: 2rem!important;
+                        page-break-after: always!important;
+                    }
+
+                    /* Each section on its own page */
+                    .section-block {
+                        page-break-before: always!important;
+                        page-break-inside: avoid!important;
+                    }
+
+                    /* Prevent cards from splitting */
+                    .section-card {
+                        page-break-inside: avoid!important;
+                    }
+                    .choice-section, .feat-grid, .stats-row, .takeaways,
+                    .cap-triangle, .partition-visual, .system-map,
+                    .interview-box, .decision-flow, .table-wrap,
+                    .incident-hero, .analogy, .map-grid {
+                        page-break-inside: avoid!important;
+                    }
+
+                    /* Hide non-essential print elements */
+                    footer { page-break-before: always!important; }
+                    .content-section { padding: 0 2rem!important; }
+                }
+            `;
+            document.head.appendChild(s);
+            document.querySelectorAll('.section-block').forEach(el => {
+                el.style.setProperty('opacity','1','important');
+                el.style.setProperty('transform','none','important');
+                el.classList.add('visible');
+            });
+            window.addEventListener('load', () => setTimeout(() => window.print(), 500));
+        }
+    </script>
+
+</body>
+</html>
