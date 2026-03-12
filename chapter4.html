@@ -273,7 +273,7 @@
         <div class="chapter-hero-content">
             <div class="chapter-label"><div class="ch-dot"></div>Chapter 04 &mdash; Deep Dive</div>
             <h1>The <span class="gradient">CAP Theorem</span><br>Pick Two. Or Do You?</h1>
-            <p>Two guests. One hotel room. A network failure in between. The tradeoff every distributed system must face.</p>
+            <p>Two fans. One concert ticket. A network failure in between. The tradeoff every distributed system must face.</p>
             <div class="chapter-tags">
                 <span class="chapter-tag" style="background: rgba(16,185,129,0.1); color: var(--green); border: 1px solid rgba(16,185,129,0.2);">Consistency</span>
                 <span class="chapter-tag" style="background: rgba(59,130,246,0.1); color: var(--blue); border: 1px solid rgba(59,130,246,0.2);">Availability</span>
@@ -290,25 +290,25 @@
                 <div class="section-header">
                     <div class="section-icon" style="background: linear-gradient(135deg, var(--red), var(--orange));">&#9889;</div>
                     <div class="section-header-text">
-                        <h2>The Hotel Room Problem</h2>
-                        <div class="subtitle">New Year's Eve. Times Square. One room left.</div>
+                        <h2>The Last Concert Ticket</h2>
+                        <div class="subtitle">Taylor Swift. Eras Tour. One ticket left. Two million fans refreshing.</div>
                     </div>
                 </div>
                 <div class="section-body">
                     <div class="incident-hero">
-                        <p style="color: var(--text-muted); font-size: 0.95rem;">Two guests open the booking app at the same time. Both see "1 room available." Both click "Book Now."</p>
-                        <div class="big-number">Who gets the room?</div>
-                        <p style="color: var(--text-muted); font-size: 0.95rem;">The hotel runs servers in <b style="color: #93c5fd;">US-East</b> and <b style="color: #6ee7b7;">US-West</b>. A network cable between them just got cut.</p>
+                        <p style="color: var(--text-muted); font-size: 0.95rem;">Two fans hit "Buy Now" at the exact same millisecond. Both see "1 ticket available." Both get a confirmation screen.</p>
+                        <div class="big-number">Who gets the ticket?</div>
+                        <p style="color: var(--text-muted); font-size: 0.95rem;">Ticketmaster runs servers in <b style="color: #93c5fd;">US-East</b> and <b style="color: #6ee7b7;">US-West</b>. A network cable between them just got cut.</p>
                     </div>
                     <div class="stats-row">
-                        <div class="stat-pill"><div class="icon">&#127912;</div><div class="val">2</div><div class="lbl">Guests Booking</div></div>
-                        <div class="stat-pill"><div class="icon">&#128719;</div><div class="val">1</div><div class="lbl">Room Left</div></div>
+                        <div class="stat-pill"><div class="icon">&#127925;</div><div class="val">2</div><div class="lbl">Fans Buying</div></div>
+                        <div class="stat-pill"><div class="icon">&#127903;</div><div class="val">1</div><div class="lbl">Ticket Left</div></div>
                         <div class="stat-pill"><div class="icon">&#9889;</div><div class="val">0</div><div class="lbl">Network Between DCs</div></div>
                         <div class="stat-pill"><div class="icon">&#128337;</div><div class="val">?</div><div class="lbl">Correct Answer</div></div>
                     </div>
                     <p>The servers can't talk to each other. Now you have two options:</p>
-                    <p><b>Option A:</b> Both servers accept the booking. Two guests show up. One has no room. <b>You prioritized availability.</b></p>
-                    <p><b>Option B:</b> Both servers reject new bookings until the network heals. Nobody can book. <b>You prioritized consistency.</b></p>
+                    <p><b>Option A:</b> Both servers sell the ticket. Two fans show up at the venue. One has no seat. <b>You prioritized availability.</b></p>
+                    <p><b>Option B:</b> Both servers freeze sales until the network heals. Nobody can buy. <b>You prioritized consistency.</b></p>
                     <p>There is no Option C. This is the CAP Theorem &mdash; and every distributed system in the world faces this choice.</p>
                 </div>
             </div>
@@ -471,9 +471,9 @@
                         </div>
                     </div>
 
-                    <p>Back to our hotel: A <b>CP system</b> would show "Service Unavailable" to both guests until servers reconnect. Nobody double-books, but some customers see errors. An <b>AP system</b> would let both book. When the network heals, one booking gets cancelled &mdash; with a free upgrade or refund.</p>
+                    <p>Back to our concert: A <b>CP system</b> would show "Service Unavailable" to both fans until servers reconnect. Nobody double-sells, but millions see errors. An <b>AP system</b> would let both buy. When the network heals, one gets a refund &mdash; with priority access to the next show.</p>
 
-                    <div class="analogy"><b>The business question:</b> What costs more &mdash; a double-booking you can fix in 5 minutes, or a frozen app on the busiest night of the year? Booking.com picks AP. Banks pick CP. Neither is wrong.</div>
+                    <div class="analogy"><b>The business question:</b> What costs more &mdash; a double-sold ticket you can fix in 5 minutes, or a crashed app when 2 million fans are refreshing? Ticketmaster picks AP. Banks pick CP. Neither is wrong.</div>
                 </div>
             </div>
         </div>
@@ -508,7 +508,7 @@
                         <table class="compare-table">
                             <tr><th>System</th><th>Type</th><th>During Partition</th><th>Recovery</th></tr>
                             <tr><td><b>Bank transfer</b></td><td class="y">CP</td><td>Transaction fails. "Try again."</td><td>No conflict &mdash; was never accepted</td></tr>
-                            <tr><td><b>Hotel booking</b></td><td class="m">AP / CP</td><td>Depends on business decision</td><td>Cancel + upgrade or block + retry</td></tr>
+                            <tr><td><b>Concert tickets</b></td><td class="m">AP / CP</td><td>Depends on business decision</td><td>Refund + priority access or block + retry</td></tr>
                             <tr><td><b>Social media feed</b></td><td style="color: var(--blue); font-weight: 700;">AP</td><td>Show slightly stale feed</td><td>Feed refreshes on next pull</td></tr>
                             <tr><td><b>Shopping cart</b></td><td style="color: var(--blue); font-weight: 700;">AP</td><td>Cart works offline, syncs later</td><td>Merge carts on reconnect</td></tr>
                             <tr><td><b>Ride matching</b></td><td style="color: var(--blue); font-weight: 700;">AP</td><td>Assign driver, resolve conflicts</td><td>Reassign in seconds</td></tr>
@@ -527,21 +527,21 @@
                     <div class="section-icon" style="background: linear-gradient(135deg, var(--orange), var(--red));">&#128188;</div>
                     <div class="section-header-text">
                         <h2>The System Design Interview</h2>
-                        <div class="subtitle">"Design a hotel booking system." Here's how to nail it.</div>
+                        <div class="subtitle">"Design a ticket booking system like Ticketmaster." Here's how to nail it.</div>
                     </div>
                 </div>
                 <div class="section-body">
                     <div class="interview-box">
-                        <div class="q">"Two users book the last room at the same hotel, same second. What happens?"</div>
+                        <div class="q">"Two fans buy the last Taylor Swift ticket at the exact same second. What happens?"</div>
                         <div class="label bad">&#10008; THE REJECTED ANSWER</div>
-                        <div class="wrong">"I'll lock the room in the database. First transaction wins. Second user gets 'Room Unavailable.' During a network partition, both servers wait until they can sync. <b>No booking goes through until consistency is guaranteed.</b>"</div>
-                        <div style="margin-top: 0.5rem; font-size: 0.78rem; color: var(--text-dim);">Interviewer: "So during a network blip on New Year's Eve, with 10,000 people trying to book rooms in Times Square... your system just freezes?"</div>
+                        <div class="wrong">"I'll lock the ticket row in the database. First transaction wins. Second user gets 'Sold Out.' During a network partition, both servers wait until they can sync. <b>No purchase goes through until consistency is guaranteed.</b>"</div>
+                        <div style="margin-top: 0.5rem; font-size: 0.78rem; color: var(--text-dim);">Interviewer: "So during a network blip on sale day, with 2 million fans refreshing... your system just freezes and Ticketmaster trends on Twitter again?"</div>
                     </div>
 
                     <div class="interview-box" style="margin-top: 1rem;">
                         <div class="q">Same question. Better answer.</div>
                         <div class="label good">&#10004; THE STAFF-LEVEL ANSWER</div>
-                        <div class="a">"It depends on the business cost. For a hotel: <b>accept both bookings (AP), resolve the conflict async.</b> One guest gets a free upgrade or instant refund. On the busiest night of the year, a frozen app loses more revenue than a double-booking you fix in 3 minutes. But for a bank transfer? <b>I'd pick CP</b> &mdash; showing an error is better than transferring money twice."</div>
+                        <div class="a">"It depends on the business cost. For concert tickets: <b>accept both purchases (AP), resolve the conflict async.</b> One fan gets an instant refund + priority queue for next release. On sale day, a frozen app loses more revenue than an oversell you fix in 3 minutes. But for a bank transfer? <b>I'd pick CP</b> &mdash; showing an error is better than transferring money twice."</div>
                     </div>
 
                     <div class="decision-flow">
