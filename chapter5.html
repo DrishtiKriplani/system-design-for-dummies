@@ -1,0 +1,906 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ch 5: Kafka &amp; Message Queues &mdash; System Design for Dummies</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧠</text></svg>">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap');
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        :root {
+            --bg: #0f172a; --bg-card: #1e293b; --bg-code: #0d1117;
+            --text: #f8fafc; --text-muted: #94a3b8; --text-dim: #64748b;
+            --border: #334155; --blue: #3b82f6; --green: #10b981;
+            --orange: #f59e0b; --purple: #8b5cf6; --pink: #ec4899;
+            --red: #ef4444; --cyan: #06b6d4; --indigo: #6366f1;
+        }
+        html { scroll-behavior: smooth; scrollbar-width: thin; scrollbar-color: var(--border) var(--bg); }
+        body { font-family: 'Inter', -apple-system, sans-serif; background: var(--bg); color: var(--text); line-height: 1.6; overflow-x: hidden; }
+
+        /* ===== NAV ===== */
+        nav { position: fixed; top: 0; left: 0; right: 0; z-index: 100; background: rgba(15,23,42,0.85); backdrop-filter: blur(20px); border-bottom: 1px solid rgba(51,65,85,0.5); }
+        .nav-inner { max-width: 1100px; margin: 0 auto; padding: 0.65rem 2rem; display: flex; align-items: center; justify-content: space-between; }
+        .nav-left { display: flex; align-items: center; gap: 1rem; }
+        .nav-logo { display: flex; align-items: center; gap: 0.6rem; font-weight: 800; font-size: 0.95rem; text-decoration: none; color: var(--text); letter-spacing: -0.5px; }
+        .nav-logo-icon { width: 28px; height: 28px; border-radius: 7px; background: linear-gradient(135deg, var(--blue), var(--purple)); display: flex; align-items: center; justify-content: center; font-size: 0.65rem; font-weight: 900; color: white; }
+        .nav-logo span { background: linear-gradient(135deg, var(--blue), var(--purple)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        .nav-sep { width: 1px; height: 18px; background: var(--border); }
+        .nav-chapter-badge { display: flex; align-items: center; gap: 0.4rem; font-size: 0.72rem; font-weight: 600; color: var(--purple); background: rgba(139,92,246,0.08); border: 1px solid rgba(139,92,246,0.15); padding: 0.2rem 0.7rem; border-radius: 50px; }
+        .nav-chapter-badge .dot { width: 5px; height: 5px; border-radius: 50%; background: var(--purple); }
+        .nav-center { display: flex; gap: 0.25rem; }
+        .nav-center a { color: var(--text-muted); text-decoration: none; font-size: 0.78rem; font-weight: 500; padding: 0.35rem 0.7rem; border-radius: 6px; transition: all 0.2s; }
+        .nav-center a:hover { color: var(--text); background: rgba(139,92,246,0.1); }
+        .nav-right { display: flex; align-items: center; }
+        .nav-counter { font-family: 'JetBrains Mono', monospace; font-size: 0.72rem; color: var(--text-dim); background: var(--bg-card); padding: 0.25rem 0.6rem; border-radius: 20px; border: 1px solid var(--border); }
+
+        /* ===== SIDEBAR ===== */
+        .sidebar { position: fixed; left: 1.2rem; top: 50%; transform: translateY(-50%); z-index: 50; display: flex; flex-direction: column; gap: 4px; }
+        .sidebar a { width: 8px; height: 8px; border-radius: 50%; background: var(--border); transition: all 0.3s; display: block; position: relative; }
+        .sidebar a:hover { background: var(--text-muted); transform: scale(1.5); }
+        .sidebar a.active { background: var(--purple); box-shadow: 0 0 8px rgba(139,92,246,0.5); transform: scale(1.5); }
+        .sidebar a .tooltip { position: absolute; left: 18px; top: 50%; transform: translateY(-50%); background: var(--bg-card); color: var(--text); padding: 0.3rem 0.7rem; border-radius: 6px; font-size: 0.65rem; white-space: nowrap; opacity: 0; pointer-events: none; transition: opacity 0.2s; border: 1px solid var(--border); }
+        .sidebar a:hover .tooltip { opacity: 1; }
+
+        /* ===== HERO ===== */
+        .chapter-hero { padding: 8rem 2rem 4rem; text-align: center; position: relative; overflow: hidden; }
+        .chapter-hero-bg { position: absolute; inset: 0; background: radial-gradient(ellipse at 30% 50%, rgba(139,92,246,0.1) 0%, transparent 60%), radial-gradient(ellipse at 70% 30%, rgba(6,182,212,0.08) 0%, transparent 50%); }
+        .chapter-hero-content { position: relative; max-width: 700px; margin: 0 auto; }
+        .chapter-label { display: inline-flex; align-items: center; gap: 0.5rem; font-size: 0.75rem; font-weight: 600; text-transform: uppercase; letter-spacing: 2px; color: var(--purple); margin-bottom: 1.2rem; }
+        .chapter-label .ch-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--purple); }
+        .chapter-hero h1 { font-size: clamp(2rem, 5vw, 3rem); font-weight: 900; letter-spacing: -1.5px; line-height: 1.15; margin-bottom: 0.8rem; }
+        .chapter-hero h1 .gradient { background: linear-gradient(135deg, var(--purple), var(--cyan)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        .chapter-hero-content > p { color: var(--text-muted); font-size: 1.05rem; max-width: 520px; margin: 0 auto; line-height: 1.7; }
+        .chapter-tags { display: flex; justify-content: center; gap: 0.5rem; flex-wrap: wrap; margin-top: 1.8rem; }
+        .chapter-tag { padding: 0.3rem 0.85rem; border-radius: 50px; font-size: 0.7rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
+
+        /* ===== SECTIONS ===== */
+        .content-section { max-width: 900px; margin: 0 auto; padding: 2rem 2rem 4rem; }
+        .section-block { position: relative; margin-bottom: 4rem; opacity: 0; transform: translateY(30px); transition: all 0.6s cubic-bezier(0.16, 1, 0.3, 1); }
+        .section-block.visible { opacity: 1; transform: translateY(0); }
+        .section-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 16px; overflow: hidden; }
+        .section-header { padding: 1.5rem 2rem 1rem; display: flex; align-items: flex-start; gap: 1rem; }
+        .section-icon { width: 44px; height: 44px; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 1.2rem; flex-shrink: 0; }
+        .section-header-text h2 { font-size: 1.3rem; font-weight: 800; letter-spacing: -0.5px; margin-bottom: 0.2rem; }
+        .section-header-text .subtitle { font-size: 0.85rem; color: var(--text-muted); line-height: 1.6; }
+        .section-body { padding: 0.5rem 2rem 2rem; }
+        .section-body p { color: var(--text-muted); font-size: 0.92rem; line-height: 1.8; margin-bottom: 1.2rem; }
+        .section-body p b { color: var(--text); }
+
+        /* ── Incident Hero ── */
+        .incident-hero { background: linear-gradient(135deg, rgba(139,92,246,0.08), rgba(6,182,212,0.05)); border: 1px solid rgba(139,92,246,0.15); border-radius: 14px; padding: 2rem; text-align: center; margin-bottom: 1.5rem; }
+        .incident-hero .big-number { font-family: 'JetBrains Mono', monospace; font-size: 2.5rem; font-weight: 800; background: linear-gradient(135deg, var(--purple), var(--cyan)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; margin: 0.8rem 0; line-height: 1.2; }
+        .stats-row { display: flex; gap: 1rem; margin: 1.5rem 0; }
+        .stat-pill { flex: 1; background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; padding: 1rem; text-align: center; }
+        .stat-pill .icon { font-size: 1.3rem; margin-bottom: 0.4rem; }
+        .stat-pill .val { font-family: 'JetBrains Mono', monospace; font-size: 1.3rem; font-weight: 800; background: linear-gradient(135deg, var(--purple), var(--cyan)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        .stat-pill .lbl { font-size: 0.65rem; color: var(--text-dim); text-transform: uppercase; letter-spacing: 1px; margin-top: 0.2rem; }
+
+        /* ── Feature Grid ── */
+        .feat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.8rem; margin: 1.5rem 0; }
+        .feat-card { background: rgba(30,41,59,0.5); border: 1px solid var(--border); border-radius: 12px; padding: 1.2rem; display: flex; gap: 0.8rem; align-items: flex-start; }
+        .feat-card .feat-icon { font-size: 1.4rem; flex-shrink: 0; }
+        .feat-card h4 { font-size: 0.88rem; font-weight: 700; margin-bottom: 0.2rem; }
+        .feat-card p { font-size: 0.8rem; color: var(--text-dim); line-height: 1.5; margin: 0; }
+
+        /* ── Architecture Diagram ── */
+        .arch-diagram { background: var(--bg-code); border-radius: 14px; padding: 1.5rem; margin: 1.5rem 0; border: 1px solid var(--border); }
+        .arch-diagram .title { font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: var(--text-dim); margin-bottom: 1rem; text-align: center; }
+        .arch-flow { display: flex; align-items: center; justify-content: center; gap: 0.5rem; flex-wrap: wrap; }
+        .arch-node { border-radius: 12px; padding: 1rem 1.2rem; text-align: center; min-width: 120px; }
+        .arch-node .node-icon { font-size: 1.5rem; margin-bottom: 0.3rem; }
+        .arch-node .node-label { font-size: 0.75rem; font-weight: 700; }
+        .arch-node .node-sub { font-size: 0.6rem; color: var(--text-dim); margin-top: 0.15rem; }
+        .arch-node.producer { background: rgba(59,130,246,0.08); border: 1.5px solid rgba(59,130,246,0.25); }
+        .arch-node.producer .node-label { color: #93c5fd; }
+        .arch-node.broker { background: rgba(139,92,246,0.08); border: 1.5px solid rgba(139,92,246,0.25); }
+        .arch-node.broker .node-label { color: #c4b5fd; }
+        .arch-node.consumer { background: rgba(16,185,129,0.08); border: 1.5px solid rgba(16,185,129,0.25); }
+        .arch-node.consumer .node-label { color: #6ee7b7; }
+        .arch-node.zk { background: rgba(245,158,11,0.08); border: 1.5px solid rgba(245,158,11,0.25); }
+        .arch-node.zk .node-label { color: #fcd34d; }
+        .arch-arrow { color: var(--text-dim); font-size: 1.2rem; font-weight: bold; }
+
+        /* ── Concept Cards (3-col) ── */
+        .concept-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0.8rem; margin: 1.5rem 0; }
+        .concept-card { background: var(--bg-code); border: 1px solid var(--border); border-radius: 12px; padding: 1.2rem; position: relative; overflow: hidden; }
+        .concept-card::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px; }
+        .concept-card .cc-icon { font-size: 1.6rem; margin-bottom: 0.5rem; }
+        .concept-card h4 { font-size: 0.88rem; font-weight: 700; margin-bottom: 0.3rem; }
+        .concept-card p { font-size: 0.78rem; color: var(--text-dim); line-height: 1.6; margin: 0; }
+        .concept-card .cc-example { margin-top: 0.6rem; padding: 0.5rem 0.7rem; background: rgba(139,92,246,0.06); border-radius: 8px; font-size: 0.7rem; color: var(--text-muted); border: 1px solid rgba(139,92,246,0.1); }
+        .concept-card .cc-example b { color: var(--purple); }
+
+        /* ── Comparison Table ── */
+        .table-wrap { border-radius: 12px; overflow: hidden; margin: 1.5rem 0; border: 1px solid var(--border); }
+        .compare-table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+        .compare-table th { background: var(--bg-card); color: var(--text-muted); padding: 0.8rem 1rem; text-align: left; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; font-size: 0.68rem; border-bottom: 2px solid var(--border); }
+        .compare-table td { padding: 0.7rem 1rem; border-bottom: 1px solid rgba(51,65,85,0.5); color: var(--text-muted); }
+        .compare-table tr:nth-child(even) td { background: rgba(15,23,42,0.3); }
+        .compare-table tr:last-child td { border-bottom: none; }
+        .y { color: var(--green); font-weight: 700; }
+        .n { color: #fca5a5; font-weight: 700; }
+        .m { color: var(--orange); font-weight: 700; }
+
+        /* ── Analogy Box ── */
+        .analogy { background: rgba(139,92,246,0.05); border: 1px solid rgba(139,92,246,0.12); border-radius: 10px; padding: 1rem 1.2rem; margin: 1rem 0; font-size: 0.82rem; color: var(--text-muted); line-height: 1.6; }
+        .analogy b { color: #c4b5fd; }
+
+        /* ── Choice Cards ── */
+        .choice-section { display: flex; gap: 1rem; margin: 1.5rem 0; align-items: stretch; }
+        .choice-card { flex: 1; border-radius: 14px; padding: 1.5rem; position: relative; overflow: hidden; }
+        .choice-card::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px; }
+        .choice-card.good { background: rgba(16,185,129,0.04); border: 1px solid rgba(16,185,129,0.12); }
+        .choice-card.good::before { background: linear-gradient(90deg, transparent, var(--green), transparent); }
+        .choice-card.bad { background: rgba(239,68,68,0.04); border: 1px solid rgba(239,68,68,0.12); }
+        .choice-card.bad::before { background: linear-gradient(90deg, transparent, var(--red), transparent); }
+        .choice-card .card-icon { font-size: 1.8rem; margin-bottom: 0.8rem; }
+        .choice-card h3 { font-size: 1.1rem; font-weight: 700; margin-bottom: 0.4rem; }
+        .choice-card.good h3 { color: #6ee7b7; }
+        .choice-card.bad h3 { color: #fca5a5; }
+        .choice-card p { font-size: 0.82rem; color: var(--text-muted); line-height: 1.6; }
+        .choice-card ul { list-style: none; margin-top: 0.6rem; }
+        .choice-card ul li { font-size: 0.8rem; color: var(--text-muted); padding: 0.25rem 0; }
+        .choice-card ul li b { color: var(--text); }
+        .choice-divider { display: flex; align-items: center; justify-content: center; min-width: 40px; }
+        .choice-badge { background: linear-gradient(135deg, var(--purple), var(--cyan)); color: white; font-size: 0.75rem; font-weight: 800; width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; box-shadow: 0 0 20px rgba(139,92,246,0.3); }
+
+        /* ── Interview Box ── */
+        .interview-box { background: linear-gradient(135deg, rgba(139,92,246,0.06), rgba(6,182,212,0.04)); border: 1px solid rgba(139,92,246,0.15); border-radius: 14px; padding: 1.5rem; margin: 1.5rem 0; }
+        .interview-box .q { font-size: 0.85rem; font-weight: 700; color: var(--text); margin-bottom: 0.5rem; padding-left: 1rem; border-left: 3px solid var(--purple); }
+        .interview-box .a { font-size: 0.82rem; color: var(--text-muted); line-height: 1.7; margin-top: 0.8rem; padding-left: 1rem; border-left: 3px solid var(--green); }
+        .interview-box .wrong { font-size: 0.82rem; color: var(--text-muted); line-height: 1.7; margin-top: 0.8rem; padding-left: 1rem; border-left: 3px solid var(--red); }
+        .interview-box .wrong b { color: #fca5a5; }
+        .interview-box .a b { color: #6ee7b7; }
+        .interview-box .label { font-size: 0.62rem; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 0.3rem; }
+        .interview-box .label.bad { color: var(--red); }
+        .interview-box .label.good { color: var(--green); }
+
+        /* ── Topic list ── */
+        .topic-list { margin: 1rem 0; }
+        .topic-item { display: flex; gap: 1rem; align-items: flex-start; padding: 1rem; background: var(--bg-code); border: 1px solid var(--border); border-radius: 10px; margin-bottom: 0.6rem; }
+        .topic-item .t-icon { font-size: 1.3rem; flex-shrink: 0; width: 36px; height: 36px; border-radius: 10px; display: flex; align-items: center; justify-content: center; }
+        .topic-item .t-content h4 { font-size: 0.88rem; font-weight: 700; margin-bottom: 0.15rem; }
+        .topic-item .t-content p { font-size: 0.8rem; color: var(--text-dim); line-height: 1.6; margin: 0; }
+        .topic-item .t-example { font-size: 0.72rem; color: var(--text-muted); margin-top: 0.4rem; padding: 0.4rem 0.6rem; background: rgba(139,92,246,0.05); border-radius: 6px; border: 1px solid rgba(139,92,246,0.08); }
+        .topic-item .t-example b { color: var(--purple); }
+
+        /* code inline */
+        code { background: var(--bg-code); padding: 0.15rem 0.4rem; border-radius: 4px; font-family: 'JetBrains Mono', monospace; font-size: 0.8rem; color: var(--purple); }
+
+        /* ── Takeaways ── */
+        .takeaways { display: flex; gap: 1rem; margin: 1.5rem 0; }
+        .tk { flex: 1; background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; padding: 1.3rem; position: relative; overflow: hidden; }
+        .tk::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px; }
+        .tk:nth-child(1)::before { background: linear-gradient(90deg, var(--purple), var(--cyan)); }
+        .tk:nth-child(2)::before { background: linear-gradient(90deg, var(--green), var(--cyan)); }
+        .tk:nth-child(3)::before { background: linear-gradient(90deg, var(--blue), var(--purple)); }
+        .tk:nth-child(4)::before { background: linear-gradient(90deg, var(--orange), var(--red)); }
+        .tk .tk-icon { font-size: 1.3rem; margin-bottom: 0.5rem; }
+        .tk h4 { font-size: 0.9rem; font-weight: 700; margin-bottom: 0.3rem; }
+        .tk p { font-size: 0.8rem; color: var(--text-dim); line-height: 1.6; }
+
+        /* ===== FOOTER ===== */
+        footer { border-top: 1px solid var(--border); padding: 3rem 2rem; text-align: center; }
+        footer p { color: var(--text-dim); font-size: 0.85rem; }
+        footer .gradient-line { width: 100px; height: 3px; background: linear-gradient(90deg, var(--purple), var(--cyan), var(--blue)); margin: 0 auto 1.5rem; border-radius: 2px; }
+        .nav-btn { display: inline-flex; align-items: center; gap: 0.5rem; padding: 0.7rem 1.5rem; background: linear-gradient(135deg, var(--purple), var(--cyan)); color: white; border: none; border-radius: 10px; font-size: 0.9rem; font-weight: 600; cursor: pointer; text-decoration: none; transition: all 0.3s; margin-top: 1rem; }
+        .nav-btn:hover { transform: translateY(-2px); box-shadow: 0 8px 30px rgba(139,92,246,0.3); }
+
+        @media (max-width: 768px) {
+            .sidebar { display: none; }
+            .nav-center { display: none; }
+            .choice-section { flex-direction: column; }
+            .choice-divider { min-width: 0; padding: 0.5rem 0; }
+            .feat-grid, .concept-grid { grid-template-columns: 1fr; }
+            .takeaways { flex-direction: column; }
+            .stats-row { flex-wrap: wrap; }
+            .stat-pill { min-width: calc(50% - 0.5rem); }
+            .arch-flow { flex-direction: column; align-items: center; }
+            .arch-arrow { transform: rotate(90deg); }
+        }
+    </style>
+</head>
+<body>
+
+    <nav>
+        <div class="nav-inner">
+            <div class="nav-left">
+                <a href="index.html" class="nav-logo"><div class="nav-logo-icon">SD</div><span>System Design for Dummies</span></a>
+                <div class="nav-sep"></div>
+                <div class="nav-chapter-badge"><div class="dot"></div>Chapter 5</div>
+            </div>
+            <div class="nav-center">
+                <a href="index.html">Home</a>
+                <a href="chapter1.html">Ch 1</a>
+                <a href="chapter2.html">Ch 2</a>
+                <a href="chapter3.html">Ch 3</a>
+                <a href="chapter4.html">Ch 4</a>
+            </div>
+            <div class="nav-right"><span class="nav-counter">10 sections</span></div>
+        </div>
+    </nav>
+
+    <div class="sidebar" id="sidebar">
+        <a href="#hero"><span class="tooltip">Intro</span></a>
+        <a href="#the-dilemma"><span class="tooltip">The Dilemma</span></a>
+        <a href="#what-is-kafka"><span class="tooltip">What is Kafka</span></a>
+        <a href="#core-concepts"><span class="tooltip">Core Concepts</span></a>
+        <a href="#architecture"><span class="tooltip">Architecture</span></a>
+        <a href="#when-kafka-shines"><span class="tooltip">When It Shines</span></a>
+        <a href="#when-overkill"><span class="tooltip">When Overkill</span></a>
+        <a href="#kafka-vs-others"><span class="tooltip">Kafka vs Others</span></a>
+        <a href="#interview"><span class="tooltip">The Interview</span></a>
+        <a href="#takeaways"><span class="tooltip">Takeaways</span></a>
+    </div>
+
+    <!-- Hero -->
+    <section class="chapter-hero" id="hero">
+        <div class="chapter-hero-bg"></div>
+        <div class="chapter-hero-content">
+            <div class="chapter-label"><div class="ch-dot"></div>Chapter 05 &mdash; Deep Dive</div>
+            <h1>Apache <span class="gradient">Kafka</span><br>&amp; Message Queues</h1>
+            <p>Candidates sprinkle Kafka everywhere in system design interviews. Here's when it actually makes sense &mdash; and when it doesn't.</p>
+            <div class="chapter-tags">
+                <span class="chapter-tag" style="background: rgba(139,92,246,0.1); color: var(--purple); border: 1px solid rgba(139,92,246,0.2);">Kafka</span>
+                <span class="chapter-tag" style="background: rgba(6,182,212,0.1); color: var(--cyan); border: 1px solid rgba(6,182,212,0.2);">Event Streaming</span>
+                <span class="chapter-tag" style="background: rgba(59,130,246,0.1); color: var(--blue); border: 1px solid rgba(59,130,246,0.2);">Pub/Sub</span>
+                <span class="chapter-tag" style="background: rgba(16,185,129,0.1); color: var(--green); border: 1px solid rgba(16,185,129,0.2);">Decoupling</span>
+            </div>
+        </div>
+    </section>
+
+    <div class="content-section">
+
+        <!-- 1: THE DILEMMA -->
+        <div class="section-block" id="the-dilemma">
+            <div class="section-card">
+                <div class="section-header">
+                    <div class="section-icon" style="background: linear-gradient(135deg, var(--purple), var(--cyan));">&#9889;</div>
+                    <div class="section-header-text">
+                        <h2>The Kafka Dilemma</h2>
+                        <div class="subtitle">Why every candidate puts Kafka in their system diagram &mdash; and why interviewers cringe.</div>
+                    </div>
+                </div>
+                <div class="section-body">
+                    <div class="incident-hero">
+                        <p style="color: var(--text-muted); font-size: 0.95rem;">"I'd put Kafka here&hellip; and here&hellip; and maybe here&hellip;"</p>
+                        <div class="big-number">Kafka Is Not a Hammer</div>
+                        <p style="color: var(--text-muted); font-size: 0.95rem;">Kafka is powerful. But slapping it between every service in your diagram doesn't make you a staff engineer &mdash; it makes you someone who learned one tool.</p>
+                    </div>
+
+                    <p>Here's the truth that separates mid-level from staff-level answers: <b>the tool choice matters less than the justification.</b> Interviewers don't want to hear "I'd use Kafka." They want to hear <b>why</b> Kafka over SQS, RabbitMQ, or even a simple database polling mechanism.</p>
+
+                    <p>This chapter covers every Kafka concept you need &mdash; from brokers to exactly-once semantics &mdash; and, more importantly, teaches you <b>when to use it and when to walk away.</b></p>
+
+                    <div class="analogy"><b>The restaurant analogy:</b> A message queue is like a kitchen order counter. The waiter (producer) places an order slip, then immediately goes back to serving tables. The chef (consumer) picks up orders at their own pace. The counter (queue) absorbs the rush. Nobody waits. Nobody crashes.</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 2: WHAT IS KAFKA -->
+        <div class="section-block" id="what-is-kafka">
+            <div class="section-card">
+                <div class="section-header">
+                    <div class="section-icon" style="background: linear-gradient(135deg, var(--purple), var(--indigo));">&#128220;</div>
+                    <div class="section-header-text">
+                        <h2>What is Apache Kafka?</h2>
+                        <div class="subtitle">A distributed event streaming platform, originally built at LinkedIn.</div>
+                    </div>
+                </div>
+                <div class="section-body">
+                    <p>Kafka is a <b>distributed, append-only commit log</b> that lets services publish and subscribe to streams of events. Unlike traditional message queues (RabbitMQ, SQS), Kafka <b>retains messages</b> after consumption &mdash; making replay, auditing, and reprocessing possible.</p>
+
+                    <div class="stats-row">
+                        <div class="stat-pill"><div class="icon">&#128640;</div><div class="val">4M+</div><div class="lbl">Messages/sec per broker</div></div>
+                        <div class="stat-pill"><div class="icon">&#128230;</div><div class="val">Days</div><div class="lbl">Message retention</div></div>
+                        <div class="stat-pill"><div class="icon">&#127760;</div><div class="val">80%</div><div class="lbl">Of Fortune 100 use it</div></div>
+                        <div class="stat-pill"><div class="icon">&#128736;</div><div class="val">2011</div><div class="lbl">Open-sourced by LinkedIn</div></div>
+                    </div>
+
+                    <p>Think of Kafka as a <b>distributed, fault-tolerant, horizontally scalable append-only log</b>. Producers write events to the end of the log. Consumers read from any position. The log is split into <b>partitions</b> spread across <b>brokers</b>. That's the entire mental model.</p>
+
+                    <div class="feat-grid">
+                        <div class="feat-card">
+                            <div class="feat-icon" style="color: var(--purple);">&#128221;</div>
+                            <div>
+                                <h4 style="color: #c4b5fd;">Append-Only Log</h4>
+                                <p>Messages are immutable. Once written, they can't be modified or deleted (until retention expires). This is what enables replay.</p>
+                            </div>
+                        </div>
+                        <div class="feat-card">
+                            <div class="feat-icon" style="color: var(--cyan);">&#128260;</div>
+                            <div>
+                                <h4 style="color: #67e8f9;">Pull-Based Consumers</h4>
+                                <p>Unlike RabbitMQ (push), Kafka consumers pull at their own pace. Slow consumers don't crash &mdash; they just fall behind.</p>
+                            </div>
+                        </div>
+                        <div class="feat-card">
+                            <div class="feat-icon" style="color: var(--green);">&#128190;</div>
+                            <div>
+                                <h4 style="color: #6ee7b7;">Persistent Storage</h4>
+                                <p>Messages are written to disk, replicated across brokers. Surviving broker failures is built into the DNA.</p>
+                            </div>
+                        </div>
+                        <div class="feat-card">
+                            <div class="feat-icon" style="color: var(--orange);">&#9997;</div>
+                            <div>
+                                <h4 style="color: #fcd34d;">Zero-Copy Transfer</h4>
+                                <p>Kafka sends data from disk to network socket without copying to userspace &mdash; the secret behind its insane throughput.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 3: CORE CONCEPTS -->
+        <div class="section-block" id="core-concepts">
+            <div class="section-card">
+                <div class="section-header">
+                    <div class="section-icon" style="background: linear-gradient(135deg, var(--cyan), var(--blue));">&#128218;</div>
+                    <div class="section-header-text">
+                        <h2>Core Concepts: The Full Picture</h2>
+                        <div class="subtitle">Every Kafka term you'll encounter in interviews, explained with real examples.</div>
+                    </div>
+                </div>
+                <div class="section-body">
+
+                    <div class="topic-list">
+
+                        <div class="topic-item">
+                            <div class="t-icon" style="background: rgba(139,92,246,0.1); color: var(--purple);">&#128230;</div>
+                            <div class="t-content">
+                                <h4 style="color: #c4b5fd;">Broker</h4>
+                                <p>A single Kafka server. It receives messages from producers, stores them on disk, and serves them to consumers. A Kafka <b>cluster</b> is just multiple brokers working together.</p>
+                                <div class="t-example"><b>Real world:</b> LinkedIn runs 100+ brokers per cluster. Each broker handles thousands of partitions and terabytes of data.</div>
+                            </div>
+                        </div>
+
+                        <div class="topic-item">
+                            <div class="t-icon" style="background: rgba(6,182,212,0.1); color: var(--cyan);">&#128195;</div>
+                            <div class="t-content">
+                                <h4 style="color: #67e8f9;">Topic</h4>
+                                <p>A named stream of events. Think of it as a <b>category</b> or <b>feed name</b>. Producers write to a topic. Consumers read from a topic. Topics are split into partitions.</p>
+                                <div class="t-example"><b>Real world:</b> <code>order-events</code>, <code>user-signups</code>, <code>payment-completed</code>, <code>page-views</code></div>
+                            </div>
+                        </div>
+
+                        <div class="topic-item">
+                            <div class="t-icon" style="background: rgba(16,185,129,0.1); color: var(--green);">&#9646;&#9646;&#9646;</div>
+                            <div class="t-content">
+                                <h4 style="color: #6ee7b7;">Partition</h4>
+                                <p>A topic is split into <b>partitions</b> &mdash; ordered, immutable sequences of messages. Partitions are distributed across brokers for parallelism. <b>Messages within a partition are strictly ordered</b>. Across partitions, there's no ordering guarantee.</p>
+                                <div class="t-example"><b>Real world:</b> A topic with 12 partitions can have 12 consumers reading in parallel. Uber uses partition keys (user_id) to ensure all events for the same rider hit the same partition &mdash; preserving order.</div>
+                            </div>
+                        </div>
+
+                        <div class="topic-item">
+                            <div class="t-icon" style="background: rgba(59,130,246,0.1); color: var(--blue);">&#128273;</div>
+                            <div class="t-content">
+                                <h4 style="color: #93c5fd;">Partition Key</h4>
+                                <p>Determines which partition a message goes to. Messages with the <b>same key always land in the same partition</b>, guaranteeing order for that key. If no key is set, messages are round-robin'd across partitions.</p>
+                                <div class="t-example"><b>Real world:</b> Use <code>user_id</code> as partition key so all events for user #42 are ordered. Use <code>order_id</code> for e-commerce so order lifecycle events (created &rarr; paid &rarr; shipped) stay in sequence.</div>
+                            </div>
+                        </div>
+
+                        <div class="topic-item">
+                            <div class="t-icon" style="background: rgba(236,72,153,0.1); color: var(--pink);">&#128229;</div>
+                            <div class="t-content">
+                                <h4 style="color: #f9a8d4;">Offset</h4>
+                                <p>A unique, sequential ID assigned to each message within a partition. Consumers track their <b>offset</b> to know where they left off. Offsets are committed back to Kafka (or externally) so consumers can resume after a crash.</p>
+                                <div class="t-example"><b>Real world:</b> Consumer reads offset 1000, processes it, commits offset 1001. If it crashes, it restarts at 1001 &mdash; no data lost, no duplicate processing (with exactly-once config).</div>
+                            </div>
+                        </div>
+
+                        <div class="topic-item">
+                            <div class="t-icon" style="background: rgba(245,158,11,0.1); color: var(--orange);">&#128101;</div>
+                            <div class="t-content">
+                                <h4 style="color: #fcd34d;">Consumer Group</h4>
+                                <p>A set of consumers that <b>divide the work</b> of reading from a topic. Each partition is assigned to exactly one consumer in the group. If you have 6 partitions and 3 consumers in a group, each consumer reads 2 partitions. <b>This is Kafka's horizontal scaling model.</b></p>
+                                <div class="t-example"><b>Real world:</b> Notification service has consumer group "push-workers" with 10 instances. Email service has group "email-workers" with 5 instances. Both independently consume the same <code>order-events</code> topic without interfering.</div>
+                            </div>
+                        </div>
+
+                        <div class="topic-item">
+                            <div class="t-icon" style="background: rgba(239,68,68,0.1); color: var(--red);">&#128257;</div>
+                            <div class="t-content">
+                                <h4 style="color: #fca5a5;">Replication Factor</h4>
+                                <p>Each partition is replicated across N brokers. One replica is the <b>leader</b> (handles reads/writes), the rest are <b>followers</b> (passive copies). If the leader broker dies, a follower is promoted. Standard production setup: replication factor = 3.</p>
+                                <div class="t-example"><b>Real world:</b> With RF=3, a topic can survive 2 broker failures without data loss. Netflix runs RF=3 for all critical topics.</div>
+                            </div>
+                        </div>
+
+                        <div class="topic-item">
+                            <div class="t-icon" style="background: rgba(99,102,241,0.1); color: var(--indigo);">&#128274;</div>
+                            <div class="t-content">
+                                <h4 style="color: #a5b4fc;">ZooKeeper / KRaft</h4>
+                                <p><b>ZooKeeper</b> was Kafka's metadata manager &mdash; tracking which brokers are alive, which broker leads which partition, and consumer group membership. <b>KRaft</b> (Kafka Raft) replaces ZooKeeper starting Kafka 3.3+, moving metadata management into Kafka itself. Fewer moving parts, simpler ops.</p>
+                                <div class="t-example"><b>Real world:</b> ZooKeeper was the #1 operational headache in Kafka deployments. KRaft eliminates an entire distributed system from your stack.</div>
+                            </div>
+                        </div>
+
+                        <div class="topic-item">
+                            <div class="t-icon" style="background: rgba(139,92,246,0.1); color: var(--purple);">&#128172;</div>
+                            <div class="t-content">
+                                <h4 style="color: #c4b5fd;">Producer Acknowledgments (acks)</h4>
+                                <p>Controls durability guarantees when a producer sends a message:</p>
+                                <p><b><code>acks=0</code></b> &mdash; Fire and forget. Fastest, but messages can be lost.<br>
+                                <b><code>acks=1</code></b> &mdash; Leader writes to disk before acknowledging. Leader failure = possible loss.<br>
+                                <b><code>acks=all</code></b> &mdash; All in-sync replicas must acknowledge. Safest. Required for exactly-once.</p>
+                                <div class="t-example"><b>Real world:</b> Analytics events: <code>acks=1</code>. Payment events: <code>acks=all</code>. Choose based on what you can afford to lose.</div>
+                            </div>
+                        </div>
+
+                        <div class="topic-item">
+                            <div class="t-icon" style="background: rgba(16,185,129,0.1); color: var(--green);">&#128175;</div>
+                            <div class="t-content">
+                                <h4 style="color: #6ee7b7;">ISR (In-Sync Replicas)</h4>
+                                <p>The set of replicas that are caught up to the leader. Only ISR members can be elected as new leaders. A follower falls out of ISR if it lags behind by more than <code>replica.lag.time.max.ms</code> (default 30s). <b>min.insync.replicas</b> sets the minimum ISR size required for <code>acks=all</code> writes to succeed.</p>
+                                <div class="t-example"><b>Real world:</b> RF=3 + <code>min.insync.replicas=2</code> + <code>acks=all</code> = gold standard production config. Survives 1 broker failure without data loss or write blocking.</div>
+                            </div>
+                        </div>
+
+                        <div class="topic-item">
+                            <div class="t-icon" style="background: rgba(6,182,212,0.1); color: var(--cyan);">&#128260;</div>
+                            <div class="t-content">
+                                <h4 style="color: #67e8f9;">Exactly-Once Semantics (EOS)</h4>
+                                <p>Kafka supports three delivery guarantees:<br>
+                                <b>At-most-once:</b> Messages may be lost, never duplicated. (<code>acks=0</code>, auto-commit offsets)<br>
+                                <b>At-least-once:</b> Messages never lost, but may be duplicated. (Most common default)<br>
+                                <b>Exactly-once:</b> No loss, no duplicates. Requires idempotent producers + transactional APIs.</p>
+                                <div class="t-example"><b>Real world:</b> Stripe uses exactly-once for payment processing. Most analytics pipelines use at-least-once with downstream deduplication &mdash; cheaper and simpler.</div>
+                            </div>
+                        </div>
+
+                        <div class="topic-item">
+                            <div class="t-icon" style="background: rgba(245,158,11,0.1); color: var(--orange);">&#128200;</div>
+                            <div class="t-content">
+                                <h4 style="color: #fcd34d;">Consumer Lag</h4>
+                                <p>The difference between the latest offset in a partition and the consumer's committed offset. <b>Lag = how far behind a consumer is.</b> Monitoring lag is the #1 operational metric for Kafka.</p>
+                                <div class="t-example"><b>Real world:</b> If your notification consumer has lag of 500,000, users are getting notifications 10 minutes late. Alert threshold: set based on SLA. Tools: Burrow, Kafka Exporter + Grafana.</div>
+                            </div>
+                        </div>
+
+                        <div class="topic-item">
+                            <div class="t-icon" style="background: rgba(236,72,153,0.1); color: var(--pink);">&#128203;</div>
+                            <div class="t-content">
+                                <h4 style="color: #f9a8d4;">Schema Registry</h4>
+                                <p>A service (often Confluent Schema Registry) that stores and enforces schemas (Avro, Protobuf, JSON Schema) for Kafka messages. Producers register schemas. Consumers validate against them. Prevents breaking changes from silently corrupting downstream services.</p>
+                                <div class="t-example"><b>Real world:</b> Team A changes the <code>order-events</code> schema by removing a field. Without schema registry: Team B's consumer silently breaks at 3 AM. With schema registry: deployment is blocked with a compatibility error.</div>
+                            </div>
+                        </div>
+
+                        <div class="topic-item">
+                            <div class="t-icon" style="background: rgba(99,102,241,0.1); color: var(--indigo);">&#128295;</div>
+                            <div class="t-content">
+                                <h4 style="color: #a5b4fc;">Kafka Connect</h4>
+                                <p>A framework for streaming data between Kafka and external systems (databases, S3, Elasticsearch, etc.) without writing custom code. <b>Source connectors</b> pull data into Kafka. <b>Sink connectors</b> push data from Kafka out.</p>
+                                <div class="t-example"><b>Real world:</b> CDC (Change Data Capture) with Debezium: stream every row change from PostgreSQL into Kafka automatically. Sink to Elasticsearch for full-text search. Zero application code.</div>
+                            </div>
+                        </div>
+
+                        <div class="topic-item">
+                            <div class="t-icon" style="background: rgba(139,92,246,0.1); color: var(--purple);">&#127754;</div>
+                            <div class="t-content">
+                                <h4 style="color: #c4b5fd;">Kafka Streams / ksqlDB</h4>
+                                <p><b>Kafka Streams</b> is a Java library for real-time stream processing directly within your app &mdash; no separate cluster (unlike Flink/Spark). <b>ksqlDB</b> lets you write stream processing as SQL queries. Both handle windowing, joins, aggregations.</p>
+                                <div class="t-example"><b>Real world:</b> "Count orders per restaurant in the last 5 minutes" &mdash; a tumbling window aggregation. Zomato uses this for real-time dashboards showing live order volume per city.</div>
+                            </div>
+                        </div>
+
+                        <div class="topic-item">
+                            <div class="t-icon" style="background: rgba(16,185,129,0.1); color: var(--green);">&#128477;</div>
+                            <div class="t-content">
+                                <h4 style="color: #6ee7b7;">Log Compaction</h4>
+                                <p>Instead of deleting old messages by time, Kafka can keep <b>only the latest value per key</b>. This turns a topic into a key-value changelog &mdash; perfect for maintaining materialized views or caches.</p>
+                                <div class="t-example"><b>Real world:</b> User profile topic with key = <code>user_id</code>. After compaction, the topic contains one record per user &mdash; always the latest profile. New consumers get the full current state on startup.</div>
+                            </div>
+                        </div>
+
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 4: ARCHITECTURE -->
+        <div class="section-block" id="architecture">
+            <div class="section-card">
+                <div class="section-header">
+                    <div class="section-icon" style="background: linear-gradient(135deg, var(--blue), var(--purple));">&#127959;</div>
+                    <div class="section-header-text">
+                        <h2>Architecture: How It Fits Together</h2>
+                        <div class="subtitle">Brokers, partitions, consumer groups, and replication in one visual.</div>
+                    </div>
+                </div>
+                <div class="section-body">
+                    <div class="arch-diagram">
+                        <div class="title">Kafka Cluster Architecture</div>
+                        <div class="arch-flow">
+                            <div class="arch-node producer">
+                                <div class="node-icon">&#128229;</div>
+                                <div class="node-label">Producer A</div>
+                                <div class="node-sub">Order Service</div>
+                            </div>
+                            <div class="arch-node producer">
+                                <div class="node-icon">&#128229;</div>
+                                <div class="node-label">Producer B</div>
+                                <div class="node-sub">Payment Service</div>
+                            </div>
+                            <span class="arch-arrow">&rarr;</span>
+                            <div style="display: flex; flex-direction: column; gap: 0.4rem;">
+                                <div class="arch-node broker">
+                                    <div class="node-icon">&#128451;</div>
+                                    <div class="node-label">Broker 1</div>
+                                    <div class="node-sub">P0 (leader), P1 (follower)</div>
+                                </div>
+                                <div class="arch-node broker">
+                                    <div class="node-icon">&#128451;</div>
+                                    <div class="node-label">Broker 2</div>
+                                    <div class="node-sub">P1 (leader), P2 (follower)</div>
+                                </div>
+                                <div class="arch-node broker">
+                                    <div class="node-icon">&#128451;</div>
+                                    <div class="node-label">Broker 3</div>
+                                    <div class="node-sub">P2 (leader), P0 (follower)</div>
+                                </div>
+                            </div>
+                            <span class="arch-arrow">&rarr;</span>
+                            <div style="display: flex; flex-direction: column; gap: 0.8rem;">
+                                <div style="text-align: center; font-size: 0.65rem; font-weight: 700; color: var(--green); text-transform: uppercase; letter-spacing: 1px;">Consumer Group A</div>
+                                <div class="arch-node consumer">
+                                    <div class="node-icon">&#128276;</div>
+                                    <div class="node-label">Notification Worker</div>
+                                    <div class="node-sub">Reads P0 &amp; P1</div>
+                                </div>
+                                <div style="text-align: center; font-size: 0.65rem; font-weight: 700; color: var(--cyan); text-transform: uppercase; letter-spacing: 1px;">Consumer Group B</div>
+                                <div class="arch-node consumer" style="background: rgba(6,182,212,0.08); border-color: rgba(6,182,212,0.25);">
+                                    <div class="node-icon">&#128200;</div>
+                                    <div class="node-label" style="color: #67e8f9;">Analytics Pipeline</div>
+                                    <div class="node-sub">Reads all partitions</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <p><b>Key insight:</b> Each consumer group gets its own independent view of the topic. Group A processing notifications doesn't affect Group B running analytics. Both track their own offsets. This is what "multiple consumers independently react to the same event" means in practice.</p>
+
+                    <div class="analogy"><b>Partition parallelism rule:</b> You can have <b>at most</b> as many consumers in a group as there are partitions. 3 partitions, 5 consumers = 2 consumers sit idle. 12 partitions, 3 consumers = each reads 4 partitions. Plan your partition count based on peak consumer parallelism.</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 5: WHEN KAFKA SHINES -->
+        <div class="section-block" id="when-kafka-shines">
+            <div class="section-card">
+                <div class="section-header">
+                    <div class="section-icon" style="background: linear-gradient(135deg, var(--green), var(--cyan));">&#10004;</div>
+                    <div class="section-header-text">
+                        <h2>When Kafka Shines</h2>
+                        <div class="subtitle">The five scenarios where Kafka is the right answer.</div>
+                    </div>
+                </div>
+                <div class="section-body">
+
+                    <div class="concept-grid">
+                        <div class="concept-card" style="grid-column: span 1;">
+                            <div style="position: absolute; top: 0; left: 0; right: 0; height: 2px; background: linear-gradient(90deg, transparent, var(--green), transparent);"></div>
+                            <div class="cc-icon">&#128268;</div>
+                            <h4 style="color: #6ee7b7;">Decoupling Services</h4>
+                            <p>Multiple consumers independently react to the same event via consumer groups. Producer doesn't know or care who's consuming.</p>
+                            <div class="cc-example"><b>Example:</b> Zomato order placed &rarr; Kafka &rarr; Push notification worker + Email worker + Analytics pipeline + Restaurant dashboard. Order service owns zero of this.</div>
+                        </div>
+                        <div class="concept-card">
+                            <div style="position: absolute; top: 0; left: 0; right: 0; height: 2px; background: linear-gradient(90deg, transparent, var(--purple), transparent);"></div>
+                            <div class="cc-icon">&#128260;</div>
+                            <h4 style="color: #c4b5fd;">Event Replay &amp; Auditability</h4>
+                            <p>Topics retain messages based on retention policy. Reprocess events, rebuild state, or debug production issues by replaying from any offset.</p>
+                            <div class="cc-example"><b>Example:</b> Razorpay discovers a billing bug. Replays 7 days of <code>payment-events</code> through a fixed consumer to recalculate all invoices. No data loss.</div>
+                        </div>
+                        <div class="concept-card">
+                            <div style="position: absolute; top: 0; left: 0; right: 0; height: 2px; background: linear-gradient(90deg, transparent, var(--cyan), transparent);"></div>
+                            <div class="cc-icon">&#128640;</div>
+                            <h4 style="color: #67e8f9;">High-Throughput Ingestion</h4>
+                            <p>Horizontally scales to millions of messages/sec across a cluster. Handles traffic spikes by absorbing bursts into partitions.</p>
+                            <div class="cc-example"><b>Example:</b> Instagram ingests 1M+ likes/sec during peak hours. Kafka absorbs the burst. Downstream counters update async without blocking the like API.</div>
+                        </div>
+                    </div>
+
+                    <div class="feat-grid">
+                        <div class="feat-card">
+                            <div class="feat-icon" style="color: var(--blue);">&#128203;</div>
+                            <div>
+                                <h4 style="color: #93c5fd;">Ordering Guarantees</h4>
+                                <p>Messages within a partition are strictly ordered. Use partition keys to ensure per-entity ordering (all events for user #42 processed in sequence).</p>
+                            </div>
+                        </div>
+                        <div class="feat-card">
+                            <div class="feat-icon" style="color: var(--orange);">&#9881;</div>
+                            <div>
+                                <h4 style="color: #fcd34d;">Event-Driven Pipelines</h4>
+                                <p>Analytics, notifications, recommendations, and search indexing consume asynchronously without blocking producers. True async microservices.</p>
+                            </div>
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+        </div>
+
+        <!-- 6: WHEN OVERKILL -->
+        <div class="section-block" id="when-overkill">
+            <div class="section-card">
+                <div class="section-header">
+                    <div class="section-icon" style="background: linear-gradient(135deg, var(--red), var(--orange));">&#10008;</div>
+                    <div class="section-header-text">
+                        <h2>When Kafka Is Overkill</h2>
+                        <div class="subtitle">Three scenarios where simpler tools win.</div>
+                    </div>
+                </div>
+                <div class="section-body">
+
+                    <div class="choice-section">
+                        <div class="choice-card bad">
+                            <div class="card-icon">&#128164;</div>
+                            <h3>One Producer, One Consumer, No Replay</h3>
+                            <p>If you have a single service producing messages and a single service consuming them with no need for replay, retention, or multiple consumers &mdash; <b>SQS or Redis Streams is simpler and cheaper.</b></p>
+                            <ul>
+                                <li><b>Why not Kafka:</b> You're paying for broker management, partition planning, ZooKeeper/KRaft overhead for a use case a managed queue handles out of the box.</li>
+                                <li><b>Use instead:</b> AWS SQS, Redis Streams, or Google Cloud Pub/Sub</li>
+                            </ul>
+                        </div>
+                        <div class="choice-divider"><div class="choice-badge">!</div></div>
+                        <div class="choice-card bad">
+                            <div class="card-icon">&#128260;</div>
+                            <h3>Request-Response Workflows</h3>
+                            <p>Kafka adds latency (batching, consumer polling intervals) and <b>doesn't natively support request-reply patterns.</b> If service A needs to call service B and wait for a response, use HTTP/gRPC.</p>
+                            <ul>
+                                <li><b>Why not Kafka:</b> Minimum consumer poll latency is ~10-100ms. Batching adds more. A synchronous gRPC call takes 1-5ms.</li>
+                                <li><b>Use instead:</b> gRPC, REST, or GraphQL</li>
+                            </ul>
+                        </div>
+                    </div>
+
+                    <div class="topic-item" style="border-color: rgba(239,68,68,0.2);">
+                        <div class="t-icon" style="background: rgba(239,68,68,0.1); color: var(--red);">&#128184;</div>
+                        <div class="t-content">
+                            <h4 style="color: #fca5a5;">Low-Scale CRUD Apps</h4>
+                            <p>If your app has minimal integrations and handles hundreds of requests/sec &mdash; the operational overhead of brokers, ZooKeeper/KRaft, partitions, consumer group management, and monitoring isn't worth it. A PostgreSQL-backed job queue (<code>SKIP LOCKED</code>) or a simple Redis list handles this with zero additional infrastructure.</p>
+                            <div class="t-example"><b>Rule of thumb:</b> If your team can't dedicate someone to Kafka ops, you probably don't need Kafka. Managed alternatives (AWS MSK, Confluent Cloud) reduce this but add cost.</div>
+                        </div>
+                    </div>
+
+                    <div class="analogy"><b>The staff-level signal:</b> In an interview, saying "I'd use SQS here instead of Kafka because we have a single consumer, no replay needs, and I want to avoid operational overhead" is 10x more impressive than defaulting to Kafka everywhere. It shows you understand tradeoffs, not just tools.</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 7: KAFKA VS OTHERS -->
+        <div class="section-block" id="kafka-vs-others">
+            <div class="section-card">
+                <div class="section-header">
+                    <div class="section-icon" style="background: linear-gradient(135deg, var(--indigo), var(--purple));">&#9878;</div>
+                    <div class="section-header-text">
+                        <h2>Kafka vs. The Alternatives</h2>
+                        <div class="subtitle">When to pick which &mdash; and why.</div>
+                    </div>
+                </div>
+                <div class="section-body">
+
+                    <div class="table-wrap">
+                        <table class="compare-table">
+                            <tr>
+                                <th>Feature</th>
+                                <th>Kafka</th>
+                                <th>RabbitMQ</th>
+                                <th>AWS SQS</th>
+                                <th>Redis Streams</th>
+                            </tr>
+                            <tr>
+                                <td><b>Model</b></td>
+                                <td>Distributed log</td>
+                                <td>Message broker</td>
+                                <td>Managed queue</td>
+                                <td>In-memory log</td>
+                            </tr>
+                            <tr>
+                                <td><b>Delivery</b></td>
+                                <td>Pull-based</td>
+                                <td>Push-based</td>
+                                <td>Pull-based</td>
+                                <td>Pull-based</td>
+                            </tr>
+                            <tr>
+                                <td><b>Message Retention</b></td>
+                                <td class="y">Days/weeks (configurable)</td>
+                                <td class="n">Deleted after ACK</td>
+                                <td class="m">14 days max</td>
+                                <td class="m">Memory-limited</td>
+                            </tr>
+                            <tr>
+                                <td><b>Replay</b></td>
+                                <td class="y">Yes (seek to offset)</td>
+                                <td class="n">No</td>
+                                <td class="n">No</td>
+                                <td class="y">Yes</td>
+                            </tr>
+                            <tr>
+                                <td><b>Ordering</b></td>
+                                <td class="y">Per partition</td>
+                                <td class="m">Per queue</td>
+                                <td class="m">FIFO queues only</td>
+                                <td class="y">Per stream</td>
+                            </tr>
+                            <tr>
+                                <td><b>Throughput</b></td>
+                                <td class="y">Millions/sec</td>
+                                <td class="m">~50K/sec</td>
+                                <td class="m">~3K/sec (FIFO)</td>
+                                <td class="y">~1M/sec</td>
+                            </tr>
+                            <tr>
+                                <td><b>Multi-Consumer</b></td>
+                                <td class="y">Consumer groups</td>
+                                <td class="m">Exchange bindings</td>
+                                <td class="n">Single consumer</td>
+                                <td class="y">Consumer groups</td>
+                            </tr>
+                            <tr>
+                                <td><b>Ops Complexity</b></td>
+                                <td class="n">High (brokers, ZK/KRaft)</td>
+                                <td class="m">Medium</td>
+                                <td class="y">Zero (managed)</td>
+                                <td class="m">Medium</td>
+                            </tr>
+                            <tr>
+                                <td><b>Best For</b></td>
+                                <td>Event streaming, pipelines</td>
+                                <td>Task queues, routing</td>
+                                <td>Simple async tasks</td>
+                                <td>Real-time, low latency</td>
+                            </tr>
+                        </table>
+                    </div>
+
+                    <div class="concept-grid" style="grid-template-columns: 1fr 1fr;">
+                        <div class="concept-card">
+                            <div style="position: absolute; top: 0; left: 0; right: 0; height: 2px; background: linear-gradient(90deg, transparent, var(--green), transparent);"></div>
+                            <div class="cc-icon">&#128172;</div>
+                            <h4 style="color: #6ee7b7;">Pick RabbitMQ When</h4>
+                            <p>You need complex routing (fanout, headers, dead-letter), task queues with acknowledgments, or request-reply patterns. RabbitMQ's exchange model is more flexible for routing than Kafka's topics.</p>
+                            <div class="cc-example"><b>Example:</b> Email service with priority queues &mdash; high-priority password resets route to fast workers, low-priority marketing emails go to slow workers.</div>
+                        </div>
+                        <div class="concept-card">
+                            <div style="position: absolute; top: 0; left: 0; right: 0; height: 2px; background: linear-gradient(90deg, transparent, var(--orange), transparent);"></div>
+                            <div class="cc-icon">&#9729;</div>
+                            <h4 style="color: #fcd34d;">Pick SQS When</h4>
+                            <p>You want zero operational overhead, one producer/one consumer, and don't need replay. SQS is the "just works" option for simple async processing on AWS.</p>
+                            <div class="cc-example"><b>Example:</b> Thumbnail generation &mdash; user uploads image &rarr; SQS message &rarr; Lambda resizes it. No brokers to manage. Scales automatically.</div>
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+        </div>
+
+        <!-- 8: THE INTERVIEW -->
+        <div class="section-block" id="interview">
+            <div class="section-card">
+                <div class="section-header">
+                    <div class="section-icon" style="background: linear-gradient(135deg, var(--orange), var(--red));">&#128188;</div>
+                    <div class="section-header-text">
+                        <h2>The System Design Interview</h2>
+                        <div class="subtitle">"Design a notification system for Zomato." Here's the mid-level vs staff-level answer.</div>
+                    </div>
+                </div>
+                <div class="section-body">
+                    <div class="interview-box">
+                        <div class="q">"How would you design a notification system that sends push, email, and SMS when an order is placed?"</div>
+                        <div class="label bad">&#10008; THE REJECTED ANSWER</div>
+                        <div class="wrong">"The order service calls the notification service synchronously after placing the order. The notification service sends push, email, and SMS in sequence. <b>If any of them fail, we retry inline.</b>"</div>
+                        <div style="margin-top: 0.5rem; font-size: 0.78rem; color: var(--text-dim);">Interviewer: "So if the SMS vendor is down for 30 seconds, your user stares at a loading spinner for 30 seconds after placing an order?"</div>
+                    </div>
+
+                    <div class="interview-box" style="margin-top: 1rem;">
+                        <div class="q">Same question. Better answer.</div>
+                        <div class="label good">&#10004; THE STAFF-LEVEL ANSWER</div>
+                        <div class="a">"The order service publishes an <code>order.placed</code> event to Kafka and returns 200 to the user immediately. Three independent consumer groups consume the event: <b>push-notification-workers</b>, <b>email-workers</b>, and <b>sms-workers</b>. Each scales independently. If SMS is down, push and email still work. The SMS consumer retries with exponential backoff from its last committed offset. I'd use <b><code>user_id</code> as the partition key</b> to ensure per-user notification ordering &mdash; so a user doesn't get 'delivered' before 'order confirmed.' I'd pick Kafka over SQS here because we need <b>multiple consumer groups on the same event</b> and may want replay for debugging missed notifications."</div>
+                    </div>
+
+                    <p><b>The golden phrase:</b> "I chose Kafka here specifically because [reason]. If this were a simpler use case with a single consumer and no replay, I'd use SQS instead." That one sentence tells the interviewer you think in tradeoffs, not tools.</p>
+
+                    <div class="interview-box" style="margin-top: 1rem;">
+                        <div class="q">"What if we need exactly-once delivery for payment notifications?"</div>
+                        <div class="label good">&#10004; BONUS ANSWER</div>
+                        <div class="a">"I'd use <b>idempotent producers</b> (<code>enable.idempotence=true</code>) with <b><code>acks=all</code></b> on the producer side, and <b>transactional consumers</b> that commit offsets and database writes atomically. But honestly, for most notification use cases, <b>at-least-once with idempotency at the consumer</b> is simpler &mdash; store a <code>notification_id</code> in a dedup table and skip if already sent. Exactly-once end-to-end across Kafka and external systems (email vendor) is architecturally impossible &mdash; the external system doesn't participate in Kafka transactions. So consumer-side dedup is the practical answer."</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 9: TAKEAWAYS -->
+        <div class="section-block" id="takeaways">
+            <div class="section-card">
+                <div class="section-header">
+                    <div class="section-icon" style="background: linear-gradient(135deg, var(--green), var(--purple));">&#127919;</div>
+                    <div class="section-header-text">
+                        <h2>Key Takeaways</h2>
+                        <div class="subtitle">What to remember when Kafka comes up in interviews or architecture reviews.</div>
+                    </div>
+                </div>
+                <div class="section-body">
+                    <div class="takeaways">
+                        <div class="tk"><div class="tk-icon">&#9878;</div><h4>Justify the Tool</h4><p>"Why Kafka over SQS?" is the question. Multiple consumers, replay, ordering, and high throughput are the valid answers.</p></div>
+                        <div class="tk"><div class="tk-icon">&#128273;</div><h4>Partition Keys Matter</h4><p>Your partition key determines ordering and parallelism. Wrong key = hot partitions. No key = no ordering. Think about it early.</p></div>
+                        <div class="tk"><div class="tk-icon">&#128200;</div><h4>Monitor Consumer Lag</h4><p>Lag is the single most important Kafka metric. If consumers can't keep up, nothing else matters.</p></div>
+                        <div class="tk"><div class="tk-icon">&#128164;</div><h4>Simpler Is Often Better</h4><p>SQS for single-consumer async. RabbitMQ for complex routing. Kafka for event streaming at scale. Use the smallest tool that fits.</p></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <footer>
+        <div class="gradient-line"></div>
+        <p>System Design for Dummies &mdash; Chapter 5: Kafka &amp; Message Queues</p>
+        <div style="margin-top: 1.5rem; display: flex; gap: 1rem; justify-content: center;">
+            <a href="chapter4.html" class="nav-btn" style="background: var(--bg-card); border: 1px solid var(--border);">&larr; Ch 4: CAP Theorem</a>
+            <a href="index.html" class="nav-btn">All Chapters</a>
+        </div>
+    </footer>
+
+    <script>
+        const blocks = document.querySelectorAll('.section-block');
+        const observer = new IntersectionObserver((entries) => {
+            entries.forEach(entry => { if (entry.isIntersecting) entry.target.classList.add('visible'); });
+        }, { threshold: 0.1 });
+        blocks.forEach(b => observer.observe(b));
+
+        const sidebarLinks = document.querySelectorAll('.sidebar a');
+        const sections = document.querySelectorAll('[id]');
+        window.addEventListener('scroll', () => {
+            let current = '';
+            sections.forEach(section => {
+                if (window.scrollY >= section.offsetTop - 200) current = section.getAttribute('id');
+            });
+            sidebarLinks.forEach(link => {
+                link.classList.remove('active');
+                if (link.getAttribute('href') === '#' + current) link.classList.add('active');
+            });
+        });
+    </script>
+
+    <script>
+        if (new URLSearchParams(window.location.search).has('print')) {
+            const s = document.createElement('style');
+            s.textContent = `
+                .section-block { opacity:1!important; transform:none!important; transition:none!important; }
+                nav, .sidebar { position:relative!important; }
+                .sidebar { display:none!important; }
+                nav { display:none!important; }
+                @media print {
+                    * { -webkit-print-color-adjust:exact!important; print-color-adjust:exact!important; }
+                    body { background: var(--bg)!important; }
+                    .chapter-hero { min-height: 100vh!important; display: flex!important; flex-direction: column!important; align-items: center!important; justify-content: center!important; padding: 2rem!important; page-break-after: always!important; }
+                    .section-block { page-break-before: always!important; page-break-inside: avoid!important; }
+                    .section-card { page-break-inside: avoid!important; }
+                    .choice-section, .feat-grid, .concept-grid, .stats-row, .takeaways,
+                    .arch-diagram, .interview-box, .table-wrap, .topic-item,
+                    .incident-hero, .analogy { page-break-inside: avoid!important; }
+                    footer { page-break-before: always!important; }
+                    .content-section { padding: 0 2rem!important; }
+                }
+            `;
+            document.head.appendChild(s);
+            document.querySelectorAll('.section-block').forEach(el => {
+                el.style.setProperty('opacity','1','important');
+                el.style.setProperty('transform','none','important');
+                el.classList.add('visible');
+            });
+            window.addEventListener('load', () => setTimeout(() => window.print(), 500));
+        }
+    </script>
+
+</body>
+</html>
