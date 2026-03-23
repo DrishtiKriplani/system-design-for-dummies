@@ -1,0 +1,753 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ch 6: Consistent Hashing &mdash; System Design for Dummies</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧠</text></svg>">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap');
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        :root {
+            --bg: #0f172a; --bg-card: #1e293b; --bg-code: #0d1117;
+            --text: #f8fafc; --text-muted: #94a3b8; --text-dim: #64748b;
+            --border: #334155; --blue: #3b82f6; --green: #10b981;
+            --orange: #f59e0b; --purple: #8b5cf6; --pink: #ec4899;
+            --red: #ef4444; --cyan: #06b6d4; --indigo: #6366f1;
+        }
+        html { scroll-behavior: smooth; scrollbar-width: thin; scrollbar-color: var(--border) var(--bg); }
+        body { font-family: 'Inter', -apple-system, sans-serif; background: var(--bg); color: var(--text); line-height: 1.6; overflow-x: hidden; }
+
+        /* ===== NAV ===== */
+        nav { position: fixed; top: 0; left: 0; right: 0; z-index: 100; background: rgba(15,23,42,0.85); backdrop-filter: blur(20px); border-bottom: 1px solid rgba(51,65,85,0.5); }
+        .nav-inner { max-width: 1100px; margin: 0 auto; padding: 0.65rem 2rem; display: flex; align-items: center; justify-content: space-between; }
+        .nav-left { display: flex; align-items: center; gap: 1rem; }
+        .nav-logo { display: flex; align-items: center; gap: 0.6rem; font-weight: 800; font-size: 0.95rem; text-decoration: none; color: var(--text); letter-spacing: -0.5px; }
+        .nav-logo-icon { width: 28px; height: 28px; border-radius: 7px; background: linear-gradient(135deg, var(--blue), var(--purple)); display: flex; align-items: center; justify-content: center; font-size: 0.65rem; font-weight: 900; color: white; }
+        .nav-logo span { background: linear-gradient(135deg, var(--blue), var(--purple)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        .nav-sep { width: 1px; height: 18px; background: var(--border); }
+        .nav-chapter-badge { display: flex; align-items: center; gap: 0.4rem; font-size: 0.72rem; font-weight: 600; color: var(--cyan); background: rgba(6,182,212,0.08); border: 1px solid rgba(6,182,212,0.15); padding: 0.2rem 0.7rem; border-radius: 50px; }
+        .nav-chapter-badge .dot { width: 5px; height: 5px; border-radius: 50%; background: var(--cyan); }
+        .nav-center { display: flex; gap: 0.25rem; }
+        .nav-center a { color: var(--text-muted); text-decoration: none; font-size: 0.78rem; font-weight: 500; padding: 0.35rem 0.7rem; border-radius: 6px; transition: all 0.2s; }
+        .nav-center a:hover { color: var(--text); background: rgba(6,182,212,0.1); }
+        .nav-right { display: flex; align-items: center; }
+        .nav-counter { font-family: 'JetBrains Mono', monospace; font-size: 0.72rem; color: var(--text-dim); background: var(--bg-card); padding: 0.25rem 0.6rem; border-radius: 20px; border: 1px solid var(--border); }
+
+        /* ===== SIDEBAR ===== */
+        .sidebar { position: fixed; left: 1.2rem; top: 50%; transform: translateY(-50%); z-index: 50; display: flex; flex-direction: column; gap: 4px; }
+        .sidebar a { width: 8px; height: 8px; border-radius: 50%; background: var(--border); transition: all 0.3s; display: block; position: relative; }
+        .sidebar a:hover { background: var(--text-muted); transform: scale(1.5); }
+        .sidebar a.active { background: var(--cyan); box-shadow: 0 0 8px rgba(6,182,212,0.5); transform: scale(1.5); }
+        .sidebar a .tooltip { position: absolute; left: 18px; top: 50%; transform: translateY(-50%); background: var(--bg-card); color: var(--text); padding: 0.3rem 0.7rem; border-radius: 6px; font-size: 0.65rem; white-space: nowrap; opacity: 0; pointer-events: none; transition: opacity 0.2s; border: 1px solid var(--border); }
+        .sidebar a:hover .tooltip { opacity: 1; }
+
+        /* ===== HERO ===== */
+        .chapter-hero { padding: 8rem 2rem 4rem; text-align: center; position: relative; overflow: hidden; }
+        .chapter-hero-bg { position: absolute; inset: 0; background: radial-gradient(ellipse at 30% 50%, rgba(6,182,212,0.1) 0%, transparent 60%), radial-gradient(ellipse at 70% 30%, rgba(139,92,246,0.08) 0%, transparent 50%); }
+        .chapter-hero-content { position: relative; max-width: 700px; margin: 0 auto; }
+        .chapter-label { display: inline-flex; align-items: center; gap: 0.5rem; font-size: 0.75rem; font-weight: 600; text-transform: uppercase; letter-spacing: 2px; color: var(--cyan); margin-bottom: 1.2rem; }
+        .chapter-label .ch-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--cyan); }
+        .chapter-hero h1 { font-size: clamp(2rem, 5vw, 3rem); font-weight: 900; letter-spacing: -1.5px; line-height: 1.15; margin-bottom: 0.8rem; }
+        .chapter-hero h1 .gradient { background: linear-gradient(135deg, var(--cyan), var(--purple)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        .chapter-hero-content > p { color: var(--text-muted); font-size: 1.05rem; max-width: 520px; margin: 0 auto; line-height: 1.7; }
+        .chapter-tags { display: flex; justify-content: center; gap: 0.5rem; flex-wrap: wrap; margin-top: 1.8rem; }
+        .chapter-tag { padding: 0.3rem 0.85rem; border-radius: 50px; font-size: 0.7rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
+
+        /* ===== SECTIONS ===== */
+        .content-section { max-width: 900px; margin: 0 auto; padding: 2rem 2rem 4rem; }
+        .section-block { position: relative; margin-bottom: 4rem; opacity: 0; transform: translateY(30px); transition: all 0.6s cubic-bezier(0.16, 1, 0.3, 1); }
+        .section-block.visible { opacity: 1; transform: translateY(0); }
+        .section-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 16px; overflow: hidden; }
+        .section-header { padding: 1.5rem 2rem 1rem; display: flex; align-items: flex-start; gap: 1rem; }
+        .section-icon { width: 44px; height: 44px; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 1.2rem; flex-shrink: 0; }
+        .section-header-text h2 { font-size: 1.3rem; font-weight: 800; letter-spacing: -0.5px; margin-bottom: 0.2rem; }
+        .section-header-text .subtitle { font-size: 0.85rem; color: var(--text-muted); line-height: 1.6; }
+        .section-body { padding: 0.5rem 2rem 2rem; }
+        .section-body p { color: var(--text-muted); font-size: 0.92rem; line-height: 1.8; margin-bottom: 1.2rem; }
+        .section-body p b { color: var(--text); }
+
+        /* ── Incident Hero ── */
+        .incident-hero { background: linear-gradient(135deg, rgba(6,182,212,0.08), rgba(139,92,246,0.05)); border: 1px solid rgba(6,182,212,0.15); border-radius: 14px; padding: 2rem; text-align: center; margin-bottom: 1.5rem; }
+        .incident-hero .big-number { font-family: 'JetBrains Mono', monospace; font-size: 2.5rem; font-weight: 800; background: linear-gradient(135deg, var(--cyan), var(--purple)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; margin: 0.8rem 0; line-height: 1.2; }
+        .stats-row { display: flex; gap: 1rem; margin: 1.5rem 0; }
+        .stat-pill { flex: 1; background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; padding: 1rem; text-align: center; }
+        .stat-pill .icon { font-size: 1.3rem; margin-bottom: 0.4rem; }
+        .stat-pill .val { font-family: 'JetBrains Mono', monospace; font-size: 1.3rem; font-weight: 800; background: linear-gradient(135deg, var(--cyan), var(--purple)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        .stat-pill .lbl { font-size: 0.65rem; color: var(--text-dim); text-transform: uppercase; letter-spacing: 1px; margin-top: 0.2rem; }
+
+        /* ── Ring Visual ── */
+        .ring-visual { background: var(--bg-code); border-radius: 14px; padding: 2rem; margin: 1.5rem 0; border: 1px solid var(--border); text-align: center; }
+        .ring-visual .title { font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: var(--text-dim); margin-bottom: 1.5rem; }
+        .ring-container { position: relative; width: 300px; height: 300px; margin: 0 auto; }
+        .ring-circle { width: 250px; height: 250px; border: 2px dashed var(--border); border-radius: 50%; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); }
+        .ring-node { position: absolute; width: 48px; height: 48px; border-radius: 50%; display: flex; flex-direction: column; align-items: center; justify-content: center; font-weight: 800; font-size: 0.7rem; transition: all 0.3s; }
+        .ring-node .ring-label { font-size: 0.5rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; margin-top: 0.1rem; }
+        .ring-node.server { border: 2px solid; }
+        .ring-node.key { border: 2px dashed; width: 36px; height: 36px; font-size: 0.6rem; }
+        .ring-note { margin-top: 1.2rem; font-size: 0.78rem; color: var(--text-dim); }
+        .ring-note b { color: var(--cyan); }
+
+        /* ── Choice Cards ── */
+        .choice-section { display: flex; gap: 1rem; margin: 1.5rem 0; align-items: stretch; }
+        .choice-card { flex: 1; border-radius: 14px; padding: 1.5rem; position: relative; overflow: hidden; }
+        .choice-card::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px; }
+        .choice-card.good { background: rgba(16,185,129,0.04); border: 1px solid rgba(16,185,129,0.12); }
+        .choice-card.good::before { background: linear-gradient(90deg, transparent, var(--green), transparent); }
+        .choice-card.bad { background: rgba(239,68,68,0.04); border: 1px solid rgba(239,68,68,0.12); }
+        .choice-card.bad::before { background: linear-gradient(90deg, transparent, var(--red), transparent); }
+        .choice-card .card-icon { font-size: 1.8rem; margin-bottom: 0.8rem; }
+        .choice-card h3 { font-size: 1.1rem; font-weight: 700; margin-bottom: 0.4rem; }
+        .choice-card.good h3 { color: #6ee7b7; }
+        .choice-card.bad h3 { color: #fca5a5; }
+        .choice-card p { font-size: 0.82rem; color: var(--text-muted); line-height: 1.6; }
+        .choice-card ul { list-style: none; margin-top: 0.6rem; }
+        .choice-card ul li { font-size: 0.8rem; color: var(--text-muted); padding: 0.25rem 0; }
+        .choice-card ul li b { color: var(--text); }
+        .choice-divider { display: flex; align-items: center; justify-content: center; min-width: 40px; }
+        .choice-badge { background: linear-gradient(135deg, var(--cyan), var(--purple)); color: white; font-size: 0.75rem; font-weight: 800; width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; box-shadow: 0 0 20px rgba(6,182,212,0.3); }
+
+        /* ── Feature Grid ── */
+        .feat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.8rem; margin: 1.5rem 0; }
+        .feat-card { background: rgba(30,41,59,0.5); border: 1px solid var(--border); border-radius: 12px; padding: 1.2rem; display: flex; gap: 0.8rem; align-items: flex-start; }
+        .feat-card .feat-icon { font-size: 1.4rem; flex-shrink: 0; }
+        .feat-card h4 { font-size: 0.88rem; font-weight: 700; margin-bottom: 0.2rem; }
+        .feat-card p { font-size: 0.8rem; color: var(--text-dim); line-height: 1.5; margin: 0; }
+
+        /* ── Comparison Table ── */
+        .table-wrap { border-radius: 12px; overflow: hidden; margin: 1.5rem 0; border: 1px solid var(--border); }
+        .compare-table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+        .compare-table th { background: var(--bg-card); color: var(--text-muted); padding: 0.8rem 1rem; text-align: left; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; font-size: 0.68rem; border-bottom: 2px solid var(--border); }
+        .compare-table td { padding: 0.7rem 1rem; border-bottom: 1px solid rgba(51,65,85,0.5); color: var(--text-muted); }
+        .compare-table tr:nth-child(even) td { background: rgba(15,23,42,0.3); }
+        .compare-table tr:last-child td { border-bottom: none; }
+        .y { color: var(--green); font-weight: 700; }
+        .n { color: #fca5a5; font-weight: 700; }
+        .m { color: var(--orange); font-weight: 700; }
+
+        /* ── Code Block ── */
+        .code-block { background: var(--bg-code); border: 1px solid var(--border); border-radius: 10px; padding: 1.2rem 1.5rem; margin: 1rem 0; font-family: 'JetBrains Mono', monospace; font-size: 0.82rem; color: var(--text-muted); line-height: 1.8; overflow-x: auto; }
+        .code-block .comment { color: var(--text-dim); }
+        .code-block .keyword { color: var(--purple); }
+        .code-block .fn { color: var(--blue); }
+        .code-block .val { color: var(--orange); }
+        .code-block .str { color: var(--green); }
+
+        /* ── Analogy Box ── */
+        .analogy { background: rgba(6,182,212,0.05); border: 1px solid rgba(6,182,212,0.12); border-radius: 10px; padding: 1rem 1.2rem; margin: 1rem 0; font-size: 0.82rem; color: var(--text-muted); line-height: 1.6; }
+        .analogy b { color: #67e8f9; }
+
+        /* ── Interview Box ── */
+        .interview-box { background: linear-gradient(135deg, rgba(6,182,212,0.06), rgba(139,92,246,0.04)); border: 1px solid rgba(6,182,212,0.15); border-radius: 14px; padding: 1.5rem; margin: 1.5rem 0; }
+        .interview-box .q { font-size: 0.85rem; font-weight: 700; color: var(--text); margin-bottom: 0.5rem; padding-left: 1rem; border-left: 3px solid var(--cyan); }
+        .interview-box .a { font-size: 0.82rem; color: var(--text-muted); line-height: 1.7; margin-top: 0.8rem; padding-left: 1rem; border-left: 3px solid var(--green); }
+        .interview-box .wrong { font-size: 0.82rem; color: var(--text-muted); line-height: 1.7; margin-top: 0.8rem; padding-left: 1rem; border-left: 3px solid var(--red); }
+        .interview-box .wrong b { color: #fca5a5; }
+        .interview-box .a b { color: #6ee7b7; }
+        .interview-box .label { font-size: 0.62rem; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 0.3rem; }
+        .interview-box .label.bad { color: var(--red); }
+        .interview-box .label.good { color: var(--green); }
+
+        /* ── System Map ── */
+        .system-map { background: var(--bg-code); border-radius: 14px; padding: 1.5rem; margin: 1.5rem 0; border: 1px solid var(--border); }
+        .system-map .title { font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: var(--text-dim); margin-bottom: 1rem; text-align: center; }
+        .map-grid { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 0.6rem; }
+        .map-item { border-radius: 10px; padding: 0.8rem; text-align: center; }
+        .map-item .map-icon { font-size: 1.2rem; margin-bottom: 0.3rem; }
+        .map-item .map-name { font-size: 0.75rem; font-weight: 700; }
+        .map-item .map-type { font-size: 0.58rem; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.8px; font-weight: 600; margin-top: 0.15rem; }
+
+        /* ── Takeaways ── */
+        .takeaways { display: flex; gap: 1rem; margin: 1.5rem 0; }
+        .tk { flex: 1; background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; padding: 1.3rem; position: relative; overflow: hidden; }
+        .tk::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px; }
+        .tk:nth-child(1)::before { background: linear-gradient(90deg, var(--cyan), var(--blue)); }
+        .tk:nth-child(2)::before { background: linear-gradient(90deg, var(--green), var(--cyan)); }
+        .tk:nth-child(3)::before { background: linear-gradient(90deg, var(--purple), var(--pink)); }
+        .tk:nth-child(4)::before { background: linear-gradient(90deg, var(--orange), var(--red)); }
+        .tk .tk-icon { font-size: 1.3rem; margin-bottom: 0.5rem; }
+        .tk h4 { font-size: 0.9rem; font-weight: 700; margin-bottom: 0.3rem; }
+        .tk p { font-size: 0.8rem; color: var(--text-dim); line-height: 1.6; }
+
+        /* ===== FOOTER ===== */
+        footer { border-top: 1px solid var(--border); padding: 3rem 2rem; text-align: center; }
+        footer p { color: var(--text-dim); font-size: 0.85rem; }
+        footer .gradient-line { width: 100px; height: 3px; background: linear-gradient(90deg, var(--cyan), var(--purple), var(--pink)); margin: 0 auto 1.5rem; border-radius: 2px; }
+        .nav-btn { display: inline-flex; align-items: center; gap: 0.5rem; padding: 0.7rem 1.5rem; background: linear-gradient(135deg, var(--cyan), var(--purple)); color: white; border: none; border-radius: 10px; font-size: 0.9rem; font-weight: 600; cursor: pointer; text-decoration: none; transition: all 0.3s; margin-top: 1rem; }
+        .nav-btn:hover { transform: translateY(-2px); box-shadow: 0 8px 30px rgba(6,182,212,0.3); }
+
+        @media (max-width: 768px) {
+            .sidebar { display: none; }
+            .nav-center { display: none; }
+            .choice-section { flex-direction: column; }
+            .choice-divider { min-width: 0; padding: 0.5rem 0; }
+            .feat-grid { grid-template-columns: 1fr; }
+            .takeaways { flex-direction: column; }
+            .stats-row { flex-wrap: wrap; }
+            .stat-pill { min-width: calc(50% - 0.5rem); }
+            .map-grid { grid-template-columns: 1fr 1fr; }
+            .ring-container { width: 260px; height: 260px; }
+            .ring-circle { width: 210px; height: 210px; }
+        }
+    </style>
+</head>
+<body>
+
+    <nav>
+        <div class="nav-inner">
+            <div class="nav-left">
+                <a href="index.html" class="nav-logo"><div class="nav-logo-icon">SD</div><span>System Design for Dummies</span></a>
+                <div class="nav-sep"></div>
+                <div class="nav-chapter-badge"><div class="dot"></div>Chapter 6</div>
+            </div>
+            <div class="nav-center">
+                <a href="index.html">Home</a>
+                <a href="chapter1.html">Ch 1</a>
+                <a href="chapter2.html">Ch 2</a>
+                <a href="chapter3.html">Ch 3</a>
+                <a href="chapter4.html">Ch 4</a>
+                <a href="chapter5.html">Ch 5</a>
+            </div>
+            <div class="nav-right"><span class="nav-counter">8 sections</span></div>
+        </div>
+    </nav>
+
+    <div class="sidebar" id="sidebar">
+        <a href="#hero"><span class="tooltip">Intro</span></a>
+        <a href="#the-problem"><span class="tooltip">The Problem</span></a>
+        <a href="#modulo-trap"><span class="tooltip">The Modulo Trap</span></a>
+        <a href="#the-ring"><span class="tooltip">The Hash Ring</span></a>
+        <a href="#virtual-nodes"><span class="tooltip">Virtual Nodes</span></a>
+        <a href="#real-systems"><span class="tooltip">Real Systems</span></a>
+        <a href="#interview"><span class="tooltip">The Interview</span></a>
+        <a href="#takeaways"><span class="tooltip">Takeaways</span></a>
+    </div>
+
+    <!-- Hero -->
+    <section class="chapter-hero" id="hero">
+        <div class="chapter-hero-bg"></div>
+        <div class="chapter-hero-content">
+            <div class="chapter-label"><div class="ch-dot"></div>Chapter 06 &mdash; Deep Dive</div>
+            <h1><span class="gradient">Consistent Hashing</span><br>&amp; Virtual Nodes</h1>
+            <p>You added a server to your cache cluster. Then 91% of your cache went cold. Here's the algorithm that prevents that &mdash; and powers every distributed database you use.</p>
+            <div class="chapter-tags">
+                <span class="chapter-tag" style="background: rgba(6,182,212,0.1); color: var(--cyan); border: 1px solid rgba(6,182,212,0.2);">Hash Ring</span>
+                <span class="chapter-tag" style="background: rgba(139,92,246,0.1); color: var(--purple); border: 1px solid rgba(139,92,246,0.2);">Virtual Nodes</span>
+                <span class="chapter-tag" style="background: rgba(16,185,129,0.1); color: var(--green); border: 1px solid rgba(16,185,129,0.2);">Partitioning</span>
+                <span class="chapter-tag" style="background: rgba(59,130,246,0.1); color: var(--blue); border: 1px solid rgba(59,130,246,0.2);">Scalability</span>
+            </div>
+        </div>
+    </section>
+
+    <div class="content-section">
+
+        <!-- 1: THE PROBLEM -->
+        <div class="section-block" id="the-problem">
+            <div class="section-card">
+                <div class="section-header">
+                    <div class="section-icon" style="background: linear-gradient(135deg, var(--red), var(--orange));">&#9889;</div>
+                    <div class="section-header-text">
+                        <h2>The 3 AM Incident</h2>
+                        <div class="subtitle">A cache cluster scaled at midnight. By morning, the database was on fire.</div>
+                    </div>
+                </div>
+                <div class="section-body">
+                    <div class="incident-hero">
+                        <p style="color: var(--text-muted); font-size: 0.95rem;">Your e-commerce platform runs 3 cache servers. Each server stores a portion of the product catalog. Response times: 2ms. Life is good.</p>
+                        <div class="big-number">Then you add a 4th server.</div>
+                        <p style="color: var(--text-muted); font-size: 0.95rem;">Cache hit rate drops from <b style="color: #6ee7b7;">98%</b> to <b style="color: #fca5a5;">4%</b>. Every request hits the database. CPU spikes to 100%. Pages start timing out.</p>
+                    </div>
+                    <div class="stats-row">
+                        <div class="stat-pill"><div class="icon">&#128187;</div><div class="val">3&rarr;4</div><div class="lbl">Servers Changed</div></div>
+                        <div class="stat-pill"><div class="icon">&#128165;</div><div class="val">91%</div><div class="lbl">Keys Remapped</div></div>
+                        <div class="stat-pill"><div class="icon">&#128200;</div><div class="val">100%</div><div class="lbl">DB CPU Spike</div></div>
+                        <div class="stat-pill"><div class="icon">&#128337;</div><div class="val">3 AM</div><div class="lbl">Pagerduty Alert</div></div>
+                    </div>
+                    <p>The cache wasn't broken. It was full. Just full of keys that <b>no one was asking for anymore</b>. Adding a single server changed which server every key maps to &mdash; silently, instantly, and catastrophically.</p>
+                    <p>This happens because of how most systems distribute data across servers. The culprit? <b>Modulo hashing.</b></p>
+                </div>
+            </div>
+        </div>
+
+        <!-- 2: THE MODULO TRAP -->
+        <div class="section-block" id="modulo-trap">
+            <div class="section-card">
+                <div class="section-header">
+                    <div class="section-icon" style="background: linear-gradient(135deg, var(--red), var(--pink));">&#128163;</div>
+                    <div class="section-header-text">
+                        <h2>The Modulo Trap</h2>
+                        <div class="subtitle">Simple, elegant, and completely breaks when the number of servers changes.</div>
+                    </div>
+                </div>
+                <div class="section-body">
+                    <p>The naive approach to distributing data across servers:</p>
+
+                    <div class="code-block">
+                        <span class="comment">// Which server should store this key?</span><br>
+                        <span class="keyword">server</span> = <span class="fn">hash</span>(<span class="str">key</span>) <span class="keyword">%</span> <span class="val">number_of_servers</span>
+                    </div>
+
+                    <p>With 3 servers, <code style="background: var(--bg-code); padding: 0.15rem 0.4rem; border-radius: 4px; font-family: 'JetBrains Mono', monospace; font-size: 0.8rem; color: var(--cyan);">hash("user:42") % 3 = 1</code> &mdash; so user 42's data lives on server 1. Clean, simple, fast.</p>
+
+                    <p>Now add a 4th server: <code style="background: var(--bg-code); padding: 0.15rem 0.4rem; border-radius: 4px; font-family: 'JetBrains Mono', monospace; font-size: 0.8rem; color: var(--red);">hash("user:42") % 4 = 3</code> &mdash; same user, now maps to server 3. Server 3 has never seen user 42. <b>Cache miss.</b></p>
+
+                    <div class="table-wrap">
+                        <table class="compare-table">
+                            <tr><th>Key</th><th>hash(key)</th><th>% 3 (before)</th><th>% 4 (after)</th><th>Moved?</th></tr>
+                            <tr><td><b>user:42</b></td><td>7829</td><td>Server 1</td><td>Server 3</td><td class="n">Yes</td></tr>
+                            <tr><td><b>product:99</b></td><td>4512</td><td>Server 0</td><td>Server 0</td><td class="y">No</td></tr>
+                            <tr><td><b>session:abc</b></td><td>6341</td><td>Server 2</td><td>Server 1</td><td class="n">Yes</td></tr>
+                            <tr><td><b>cart:77</b></td><td>9103</td><td>Server 1</td><td>Server 3</td><td class="n">Yes</td></tr>
+                            <tr><td><b>order:500</b></td><td>3287</td><td>Server 2</td><td>Server 3</td><td class="n">Yes</td></tr>
+                        </table>
+                    </div>
+
+                    <p>Out of every N keys, roughly <b>(N-1)/N</b> remap when you change the server count. For 3 &rarr; 4 servers, that's ~75% mathematically, but in practice it's even worse &mdash; <b>up to 91% of keys</b> end up on the wrong server.</p>
+
+                    <div class="choice-section">
+                        <div class="choice-card bad">
+                            <div class="card-icon">&#128165;</div>
+                            <h3>What Goes Wrong</h3>
+                            <ul>
+                                <li><b>Cache stampede:</b> All requests hit the database at once</li>
+                                <li><b>Session loss:</b> Users get logged out mid-checkout</li>
+                                <li><b>Rate limit reset:</b> Abusive users get a clean slate</li>
+                                <li><b>Shopping cart vanish:</b> Items disappear mid-purchase</li>
+                            </ul>
+                        </div>
+                        <div class="choice-divider"><div class="choice-badge">VS</div></div>
+                        <div class="choice-card good">
+                            <div class="card-icon">&#127919;</div>
+                            <h3>What We Need</h3>
+                            <ul>
+                                <li><b>Add a server:</b> Only ~1/N keys should move</li>
+                                <li><b>Remove a server:</b> Only that server's keys redistribute</li>
+                                <li><b>No downtime:</b> Scaling should be invisible to users</li>
+                                <li><b>Even load:</b> No single server gets overwhelmed</li>
+                            </ul>
+                        </div>
+                    </div>
+
+                    <div class="analogy"><b>Analogy:</b> Modulo hashing is like numbering seats in a row. If you add a seat in the middle, everyone after it has to move down. <b>Consistent hashing</b> is like placing seats in a circle &mdash; adding a new seat only displaces the person next to it.</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 3: THE HASH RING -->
+        <div class="section-block" id="the-ring">
+            <div class="section-card">
+                <div class="section-header">
+                    <div class="section-icon" style="background: linear-gradient(135deg, var(--cyan), var(--blue));">&#128992;</div>
+                    <div class="section-header-text">
+                        <h2>The Hash Ring</h2>
+                        <div class="subtitle">Place servers and keys on a circle. Walk clockwise. That's the whole algorithm.</div>
+                    </div>
+                </div>
+                <div class="section-body">
+                    <p>Instead of using modulo, <b>consistent hashing</b> maps everything &mdash; both servers and keys &mdash; onto a circular number line from 0 to 2<sup>32</sup>.</p>
+
+                    <div class="ring-visual">
+                        <div class="title">The Consistent Hash Ring</div>
+                        <div class="ring-container">
+                            <div class="ring-circle"></div>
+                            <!-- Servers on the ring -->
+                            <div class="ring-node server" style="top: 0; left: 50%; transform: translateX(-50%); background: rgba(6,182,212,0.15); border-color: var(--cyan); color: var(--cyan);">S1<div class="ring-label">Server</div></div>
+                            <div class="ring-node server" style="top: 50%; right: 0; transform: translateY(-50%); background: rgba(139,92,246,0.15); border-color: var(--purple); color: var(--purple);">S2<div class="ring-label">Server</div></div>
+                            <div class="ring-node server" style="bottom: 0; left: 50%; transform: translateX(-50%); background: rgba(16,185,129,0.15); border-color: var(--green); color: var(--green);">S3<div class="ring-label">Server</div></div>
+                            <!-- Keys on the ring -->
+                            <div class="ring-node key" style="top: 12%; right: 15%; background: rgba(6,182,212,0.08); border-color: rgba(6,182,212,0.4); color: var(--cyan);">K1</div>
+                            <div class="ring-node key" style="bottom: 25%; right: 8%; background: rgba(139,92,246,0.08); border-color: rgba(139,92,246,0.4); color: var(--purple);">K2</div>
+                            <div class="ring-node key" style="bottom: 12%; left: 20%; background: rgba(16,185,129,0.08); border-color: rgba(16,185,129,0.4); color: var(--green);">K3</div>
+                        </div>
+                        <div class="ring-note"><b>Rule:</b> Each key is handled by the first server found clockwise from the key's position on the ring.</div>
+                    </div>
+
+                    <p><b>How it works:</b></p>
+                    <p><b>Step 1:</b> Hash each server's identifier (IP, hostname) to a position on the ring.</p>
+                    <p><b>Step 2:</b> Hash each key to a position on the ring.</p>
+                    <p><b>Step 3:</b> For any key, walk clockwise from its position. The first server you hit owns that key.</p>
+
+                    <div class="feat-grid">
+                        <div class="feat-card">
+                            <div class="feat-icon" style="color: var(--green);">&#10003;</div>
+                            <div>
+                                <h4 style="color: var(--green);">Add a Server</h4>
+                                <p>New server lands on the ring. It takes over keys from its clockwise neighbor only. All other keys stay put. ~1/N keys move.</p>
+                            </div>
+                        </div>
+                        <div class="feat-card">
+                            <div class="feat-icon" style="color: var(--red);">&#10007;</div>
+                            <div>
+                                <h4 style="color: #fca5a5;">Remove a Server</h4>
+                                <p>Server leaves the ring. Its keys fall through to the next clockwise server. No other keys are affected.</p>
+                            </div>
+                        </div>
+                        <div class="feat-card">
+                            <div class="feat-icon" style="color: var(--cyan);">&#128200;</div>
+                            <div>
+                                <h4 style="color: var(--cyan);">The Math</h4>
+                                <p>Add 1 server to a 10-node cluster: ~10% of keys move. With modulo: ~91% move. That's a 9x reduction in cache invalidation.</p>
+                            </div>
+                        </div>
+                        <div class="feat-card">
+                            <div class="feat-icon" style="color: var(--orange);">&#9888;</div>
+                            <div>
+                                <h4 style="color: var(--orange);">The Catch</h4>
+                                <p>With only a few servers on the ring, the segments are uneven. One server can own 3x the keyspace of another. That's where virtual nodes come in.</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="analogy"><b>The seat analogy, continued:</b> Think of a circular dining table with 3 people seated. Each person "owns" the section of the table to their left. Add a 4th guest &mdash; they sit down and take a portion from just one neighbor. Nobody else moves. That's consistent hashing.</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 4: VIRTUAL NODES -->
+        <div class="section-block" id="virtual-nodes">
+            <div class="section-card">
+                <div class="section-header">
+                    <div class="section-icon" style="background: linear-gradient(135deg, var(--purple), var(--cyan));">&#128993;</div>
+                    <div class="section-header-text">
+                        <h2>Virtual Nodes</h2>
+                        <div class="subtitle">The fix for the naive ring's biggest problem: uneven load distribution.</div>
+                    </div>
+                </div>
+                <div class="section-body">
+                    <p><b>The problem with a naive ring:</b> If you place 3 servers on a ring, they split it into 3 segments. But because hash functions don't guarantee even spacing, one server might own 50% of the ring while another owns 15%.</p>
+
+                    <p>In production, this means one server handles 3x the traffic of another. You added horizontal scaling &mdash; and got vertical problems.</p>
+
+                    <div class="incident-hero">
+                        <p style="color: var(--text-muted); font-size: 0.95rem;">3 servers, naive ring placement</p>
+                        <div class="big-number">15% &middot; 35% &middot; 50%</div>
+                        <p style="color: var(--text-muted); font-size: 0.95rem;">Server 3 handles half of all traffic. It's a bottleneck disguised as distributed.</p>
+                    </div>
+
+                    <p><b>The solution: virtual nodes (vnodes).</b></p>
+
+                    <p>Instead of placing each physical server at 1 point on the ring, give it <b>many points</b>. Each point is a "virtual node." A physical server with 150 virtual nodes appears at 150 positions on the ring.</p>
+
+                    <div class="table-wrap">
+                        <table class="compare-table">
+                            <tr><th>Virtual Nodes per Server</th><th>Load Variance</th><th>Standard Deviation</th></tr>
+                            <tr><td><b>1 (no vnodes)</b></td><td class="n">Up to 3&ndash;4x imbalance</td><td>~40&ndash;50%</td></tr>
+                            <tr><td><b>10</b></td><td class="m">~20% variance</td><td>~15%</td></tr>
+                            <tr><td><b>50</b></td><td class="m">~12% variance</td><td>~8%</td></tr>
+                            <tr><td><b>100&ndash;150</b></td><td class="y">~5&ndash;10% variance</td><td>~3&ndash;5%</td></tr>
+                            <tr><td><b>250+</b></td><td class="y">~3% variance</td><td>~2%</td></tr>
+                        </table>
+                    </div>
+
+                    <p><b>How virtual nodes work:</b></p>
+
+                    <div class="code-block">
+                        <span class="comment">// Instead of one position per server:</span><br>
+                        <span class="fn">ring</span>.<span class="fn">add</span>(<span class="fn">hash</span>(<span class="str">"server-1"</span>)) <span class="comment">// 1 point on ring</span><br><br>
+                        <span class="comment">// Create 150 virtual nodes per server:</span><br>
+                        <span class="keyword">for</span> i <span class="keyword">in</span> <span class="val">0..150</span>:<br>
+                        &nbsp;&nbsp;<span class="fn">ring</span>.<span class="fn">add</span>(<span class="fn">hash</span>(<span class="str">"server-1#"</span> + i)) <span class="comment">// 150 points on ring</span>
+                    </div>
+
+                    <p>Each virtual node maps back to the same physical server. The key lookup is the same &mdash; walk clockwise, find the first node, resolve it to its physical server. The only difference: the ring has more points, so segments are more even.</p>
+
+                    <div class="feat-grid">
+                        <div class="feat-card">
+                            <div class="feat-icon" style="color: var(--cyan);">&#9878;</div>
+                            <div>
+                                <h4 style="color: var(--cyan);">Even Distribution</h4>
+                                <p>More points on the ring = smaller segments = more uniform load. 150 vnodes per server gets you within ~10% variance.</p>
+                            </div>
+                        </div>
+                        <div class="feat-card">
+                            <div class="feat-icon" style="color: var(--green);">&#128296;</div>
+                            <div>
+                                <h4 style="color: var(--green);">Heterogeneous Hardware</h4>
+                                <p>A beefy server gets 200 vnodes. A smaller one gets 50. Load distributes proportionally to capacity &mdash; not uniformly.</p>
+                            </div>
+                        </div>
+                        <div class="feat-card">
+                            <div class="feat-icon" style="color: var(--purple);">&#127760;</div>
+                            <div>
+                                <h4 style="color: var(--purple);">Smoother Rebalancing</h4>
+                                <p>When a server joins, its vnodes are spread across the ring. It takes keys from multiple servers, not just one neighbor. Load transfers evenly.</p>
+                            </div>
+                        </div>
+                        <div class="feat-card">
+                            <div class="feat-icon" style="color: var(--orange);">&#9888;</div>
+                            <div>
+                                <h4 style="color: var(--orange);">Memory Tradeoff</h4>
+                                <p>More vnodes = larger ring metadata. 100 servers x 150 vnodes = 15,000 entries. Trivial for servers, but the routing table isn't free.</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="analogy"><b>Cassandra calls them tokens.</b> Each node in a Cassandra cluster owns a set of token ranges. When you add a node, you split existing token ranges. Cassandra's <code style="background: var(--bg-code); padding: 0.15rem 0.4rem; border-radius: 4px; font-family: 'JetBrains Mono', monospace; font-size: 0.8rem; color: var(--cyan);">num_tokens</code> setting controls how many vnodes each node gets. Default: 256.</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 5: WHAT IT DOESN'T SOLVE -->
+        <div class="section-block" id="hotspots">
+            <div class="section-card">
+                <div class="section-header">
+                    <div class="section-icon" style="background: linear-gradient(135deg, var(--orange), var(--red));">&#128293;</div>
+                    <div class="section-header-text">
+                        <h2>What Consistent Hashing Doesn't Solve</h2>
+                        <div class="subtitle">The ring distributes keys evenly. It doesn't distribute traffic evenly.</div>
+                    </div>
+                </div>
+                <div class="section-body">
+                    <p>A viral tweet, a celebrity's profile, a flash sale product &mdash; one key can account for 20% of all reads. Consistent hashing faithfully routes all 20% to the same server.</p>
+
+                    <p><b>The ring balances keyspace. It does not balance access frequency.</b></p>
+
+                    <div class="table-wrap">
+                        <table class="compare-table">
+                            <tr><th>Problem</th><th>Consistent Hashing Solves It?</th><th>What Actually Solves It</th></tr>
+                            <tr><td><b>Key redistribution on rescale</b></td><td class="y">Yes</td><td>Core purpose of the algorithm</td></tr>
+                            <tr><td><b>Even key distribution</b></td><td class="y">Yes (with vnodes)</td><td>Virtual nodes / tokens</td></tr>
+                            <tr><td><b>Hotspot / hot key</b></td><td class="n">No</td><td>Key splitting, local caching, read replicas</td></tr>
+                            <tr><td><b>Data replication</b></td><td class="n">No</td><td>Replicate to next N nodes on ring</td></tr>
+                            <tr><td><b>Node failure detection</b></td><td class="n">No</td><td>Gossip protocol, heartbeats</td></tr>
+                        </table>
+                    </div>
+
+                    <p><b>How real systems handle hotspots:</b></p>
+
+                    <div class="feat-grid">
+                        <div class="feat-card">
+                            <div class="feat-icon">&#128293;</div>
+                            <div>
+                                <h4>DynamoDB Adaptive Capacity</h4>
+                                <p>Detects hot partitions automatically and splits them, redistributing traffic without manual intervention.</p>
+                            </div>
+                        </div>
+                        <div class="feat-card">
+                            <div class="feat-icon">&#128203;</div>
+                            <div>
+                                <h4>Key Splitting</h4>
+                                <p>Append a random suffix to hot keys (e.g., <code style="font-family: 'JetBrains Mono', monospace; font-size: 0.75rem;">tweet:123#0</code> through <code style="font-family: 'JetBrains Mono', monospace; font-size: 0.75rem;">tweet:123#9</code>). Reads scatter across 10 partitions.</p>
+                            </div>
+                        </div>
+                        <div class="feat-card">
+                            <div class="feat-icon">&#128451;</div>
+                            <div>
+                                <h4>Local Caching</h4>
+                                <p>Cache hot keys at the application layer. The database never sees the request. Instagram does this for celebrity profiles.</p>
+                            </div>
+                        </div>
+                        <div class="feat-card">
+                            <div class="feat-icon">&#128257;</div>
+                            <div>
+                                <h4>Read Replicas on Ring</h4>
+                                <p>Replicate data to the next N nodes clockwise on the ring. Reads can hit any replica. Cassandra uses RF=3 by default.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 6: REAL SYSTEMS -->
+        <div class="section-block" id="real-systems">
+            <div class="section-card">
+                <div class="section-header">
+                    <div class="section-icon" style="background: linear-gradient(135deg, var(--purple), var(--indigo));">&#128506;</div>
+                    <div class="section-header-text">
+                        <h2>Consistent Hashing in the Real World</h2>
+                        <div class="subtitle">Every distributed system you use runs some form of this algorithm.</div>
+                    </div>
+                </div>
+                <div class="section-body">
+                    <div class="system-map">
+                        <div class="title">Who Uses Consistent Hashing</div>
+                        <div class="map-grid">
+                            <div class="map-item" style="background: rgba(6,182,212,0.06); border: 1px solid rgba(6,182,212,0.15);"><div class="map-icon">&#128195;</div><div class="map-name" style="color: #67e8f9;">Cassandra</div><div class="map-type">Token ring / vnodes</div></div>
+                            <div class="map-item" style="background: rgba(245,158,11,0.06); border: 1px solid rgba(245,158,11,0.15);"><div class="map-icon">&#9889;</div><div class="map-name" style="color: #fcd34d;">DynamoDB</div><div class="map-type">Partition routing</div></div>
+                            <div class="map-item" style="background: rgba(16,185,129,0.06); border: 1px solid rgba(16,185,129,0.15);"><div class="map-icon">&#127760;</div><div class="map-name" style="color: #6ee7b7;">Akamai CDN</div><div class="map-type">Edge routing</div></div>
+                            <div class="map-item" style="background: rgba(139,92,246,0.06); border: 1px solid rgba(139,92,246,0.15);"><div class="map-icon">&#127918;</div><div class="map-name" style="color: #c4b5fd;">Discord</div><div class="map-type">Voice server routing</div></div>
+                        </div>
+                    </div>
+
+                    <div class="table-wrap">
+                        <table class="compare-table">
+                            <tr><th>System</th><th>What's on the Ring</th><th>Virtual Nodes</th><th>Why They Use It</th></tr>
+                            <tr><td><b>Cassandra</b></td><td>Data partitions</td><td class="y">256 tokens/node (default)</td><td>Add nodes under live traffic with minimal data movement</td></tr>
+                            <tr><td><b>DynamoDB</b></td><td>Partition ranges</td><td class="y">Yes (internal)</td><td>Automatic partition splitting and rebalancing</td></tr>
+                            <tr><td><b>Akamai CDN</b></td><td>Edge servers</td><td class="y">Yes</td><td>Same URL &rarr; same edge node = max cache hits globally</td></tr>
+                            <tr><td><b>Discord</b></td><td>Voice servers</td><td class="m">Varies</td><td>Server changes don't disconnect every user</td></tr>
+                            <tr><td><b>Memcached</b></td><td>Cache nodes</td><td class="y">Ketama algorithm</td><td>Scale cache cluster without cold cache stampede</td></tr>
+                            <tr><td><b>Riak</b></td><td>Data partitions</td><td class="y">64&ndash;256 vnodes</td><td>Dynamo-style distributed key-value store</td></tr>
+                        </table>
+                    </div>
+
+                    <p><b>Amazon's Dynamo paper (2007)</b> is the foundational document for consistent hashing in production systems. Cassandra, Riak, and Voldemort all trace their lineage back to this paper. DynamoDB is Amazon's managed evolution of the same ideas.</p>
+
+                    <div class="analogy"><b>Key insight:</b> Consistent hashing isn't chosen because it's clever. It's chosen because it makes <b>scaling boring</b>. Adding capacity to a cluster should be an operational non-event &mdash; not a 3 AM incident.</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 7: THE INTERVIEW -->
+        <div class="section-block" id="interview">
+            <div class="section-card">
+                <div class="section-header">
+                    <div class="section-icon" style="background: linear-gradient(135deg, var(--cyan), var(--purple));">&#128188;</div>
+                    <div class="section-header-text">
+                        <h2>The System Design Interview</h2>
+                        <div class="subtitle">"You have 3 cache servers. You need to scale to 4. Walk me through it."</div>
+                    </div>
+                </div>
+                <div class="section-body">
+                    <div class="interview-box">
+                        <div class="q">"Your cache cluster has 3 servers. Traffic is growing. How do you add a 4th server?"</div>
+                        <div class="label bad">&#10008; THE REJECTED ANSWER</div>
+                        <div class="wrong">"I'll add the server and redistribute keys using <b>hash(key) % 4</b>. The load balancer handles the rest."</div>
+                        <div style="margin-top: 0.5rem; font-size: 0.78rem; color: var(--text-dim);">Interviewer thinking: "They don't realize 91% of their cache just went cold."</div>
+                    </div>
+
+                    <div class="interview-box" style="margin-top: 1rem;">
+                        <div class="q">Same question. Better answer.</div>
+                        <div class="label good">&#10004; THE STAFF-LEVEL ANSWER</div>
+                        <div class="a">"Modulo hashing would remap ~91% of keys, causing a cache stampede. Instead, I'd use <b>consistent hashing</b>. Servers and keys sit on a hash ring. Adding a server only takes keys from its immediate clockwise neighbor &mdash; about 1/N of the total. I'd use <b>virtual nodes</b> (100&ndash;150 per server) to ensure even load distribution. This is the same approach Cassandra and DynamoDB use. The cache stays ~90% warm through the scaling event."</div>
+                    </div>
+
+                    <p><b>When to bring up consistent hashing in interviews:</b></p>
+
+                    <div class="feat-grid">
+                        <div class="feat-card">
+                            <div class="feat-icon">&#128451;</div>
+                            <div>
+                                <h4>"Design a distributed cache"</h4>
+                                <p>How keys are routed to nodes. Consistent hashing prevents cold cache on rescale.</p>
+                            </div>
+                        </div>
+                        <div class="feat-card">
+                            <div class="feat-icon">&#128274;</div>
+                            <div>
+                                <h4>"Design a rate limiter"</h4>
+                                <p>User counters are sharded across nodes. Modulo hashing resets counters on rescale. Consistent hashing preserves them.</p>
+                            </div>
+                        </div>
+                        <div class="feat-card">
+                            <div class="feat-icon">&#127760;</div>
+                            <div>
+                                <h4>"Design a CDN"</h4>
+                                <p>Route URLs to edge servers. Same URL should hit the same edge node for max cache hits.</p>
+                            </div>
+                        </div>
+                        <div class="feat-card">
+                            <div class="feat-icon">&#128195;</div>
+                            <div>
+                                <h4>"Design a distributed database"</h4>
+                                <p>Partition data across nodes. Consistent hashing with vnodes enables elastic scaling.</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <p><b>The golden phrase:</b> "I'm using consistent hashing here because adding or removing nodes should only move 1/N of the keys, not all of them. With virtual nodes, load stays balanced even with heterogeneous hardware."</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- 8: TAKEAWAYS -->
+        <div class="section-block" id="takeaways">
+            <div class="section-card">
+                <div class="section-header">
+                    <div class="section-icon" style="background: linear-gradient(135deg, var(--green), var(--cyan));">&#127919;</div>
+                    <div class="section-header-text">
+                        <h2>Key Takeaways</h2>
+                        <div class="subtitle">What to remember about consistent hashing and virtual nodes</div>
+                    </div>
+                </div>
+                <div class="section-body">
+                    <div class="takeaways">
+                        <div class="tk"><div class="tk-icon">&#128163;</div><h4>Modulo Breaks at Scale</h4><p>hash(key) % N remaps ~91% of keys when N changes. That's a self-inflicted outage, not a scaling strategy.</p></div>
+                        <div class="tk"><div class="tk-icon">&#128992;</div><h4>The Ring Minimizes Movement</h4><p>Add a server &rarr; ~1/N keys move. Remove a server &rarr; only its keys redistribute. Cache stays warm.</p></div>
+                        <div class="tk"><div class="tk-icon">&#128993;</div><h4>Virtual Nodes Are Essential</h4><p>A naive ring has 3&ndash;4x load imbalance. 150 vnodes per server reduces variance to ~10%. Every production system uses them.</p></div>
+                        <div class="tk"><div class="tk-icon">&#128293;</div><h4>Hotspots Need Separate Solutions</h4><p>The ring balances keys, not traffic. A viral key still hammers one node. Use key splitting, local caching, or read replicas.</p></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <footer>
+        <div class="gradient-line"></div>
+        <p>System Design for Dummies &mdash; Chapter 6: Consistent Hashing &amp; Virtual Nodes</p>
+        <div style="margin-top: 1.5rem; display: flex; gap: 1rem; justify-content: center;">
+            <a href="chapter5.html" class="nav-btn" style="background: var(--bg-card); border: 1px solid var(--border);">&larr; Ch 5: Kafka</a>
+            <a href="index.html" class="nav-btn">All Chapters</a>
+        </div>
+    </footer>
+
+    <script>
+        const blocks = document.querySelectorAll('.section-block');
+        const observer = new IntersectionObserver((entries) => {
+            entries.forEach(entry => { if (entry.isIntersecting) entry.target.classList.add('visible'); });
+        }, { threshold: 0.1 });
+        blocks.forEach(b => observer.observe(b));
+
+        const sidebarLinks = document.querySelectorAll('.sidebar a');
+        const sections = document.querySelectorAll('[id]');
+        window.addEventListener('scroll', () => {
+            let current = '';
+            sections.forEach(section => {
+                if (window.scrollY >= section.offsetTop - 200) current = section.getAttribute('id');
+            });
+            sidebarLinks.forEach(link => {
+                link.classList.remove('active');
+                if (link.getAttribute('href') === '#' + current) link.classList.add('active');
+            });
+        });
+    </script>
+
+    <script>
+        if (new URLSearchParams(window.location.search).has('print')) {
+            const s = document.createElement('style');
+            s.textContent = `
+                .section-block { opacity:1!important; transform:none!important; transition:none!important; }
+                nav, .sidebar { position:relative!important; }
+                .sidebar { display:none!important; }
+                nav { display:none!important; }
+
+                @media print {
+                    * { -webkit-print-color-adjust:exact!important; print-color-adjust:exact!important; }
+                    body { background: var(--bg)!important; }
+                    .chapter-hero {
+                        min-height: 100vh!important;
+                        display: flex!important;
+                        flex-direction: column!important;
+                        align-items: center!important;
+                        justify-content: center!important;
+                        padding: 2rem!important;
+                        page-break-after: always!important;
+                    }
+                    .section-block {
+                        page-break-before: always!important;
+                        page-break-inside: avoid!important;
+                    }
+                    .section-card { page-break-inside: avoid!important; }
+                    .choice-section, .feat-grid, .stats-row, .takeaways,
+                    .ring-visual, .system-map, .interview-box, .table-wrap,
+                    .incident-hero, .analogy, .map-grid, .code-block {
+                        page-break-inside: avoid!important;
+                    }
+                    footer { page-break-before: always!important; }
+                    .content-section { padding: 0 2rem!important; }
+                }
+            `;
+            document.head.appendChild(s);
+            document.querySelectorAll('.section-block').forEach(el => {
+                el.style.setProperty('opacity','1','important');
+                el.style.setProperty('transform','none','important');
+                el.classList.add('visible');
+            });
+            window.addEventListener('load', () => setTimeout(() => window.print(), 500));
+        }
+    </script>
+
+</body>
+</html>
