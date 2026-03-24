@@ -1,0 +1,741 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ch 7: Write-Ahead Logging (WAL) &mdash; System Design for Dummies</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧠</text></svg>">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap');
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        :root {
+            --bg: #0f172a; --bg-card: #1e293b; --bg-code: #0d1117;
+            --text: #f8fafc; --text-muted: #94a3b8; --text-dim: #64748b;
+            --border: #334155; --blue: #3b82f6; --green: #10b981;
+            --orange: #f59e0b; --purple: #8b5cf6; --pink: #ec4899;
+            --red: #ef4444; --cyan: #06b6d4; --indigo: #6366f1;
+            --emerald: #34d399;
+        }
+        html { scroll-behavior: smooth; scrollbar-width: thin; scrollbar-color: var(--border) var(--bg); }
+        body { font-family: 'Inter', -apple-system, sans-serif; background: var(--bg); color: var(--text); line-height: 1.6; overflow-x: hidden; }
+
+        /* ===== NAV ===== */
+        nav { position: fixed; top: 0; left: 0; right: 0; z-index: 100; background: rgba(15,23,42,0.85); backdrop-filter: blur(20px); border-bottom: 1px solid rgba(51,65,85,0.5); }
+        .nav-inner { max-width: 1100px; margin: 0 auto; padding: 0.65rem 2rem; display: flex; align-items: center; justify-content: space-between; }
+        .nav-left { display: flex; align-items: center; gap: 1rem; }
+        .nav-logo { display: flex; align-items: center; gap: 0.6rem; font-weight: 800; font-size: 0.95rem; text-decoration: none; color: var(--text); letter-spacing: -0.5px; }
+        .nav-logo-icon { width: 28px; height: 28px; border-radius: 7px; background: linear-gradient(135deg, var(--blue), var(--purple)); display: flex; align-items: center; justify-content: center; font-size: 0.65rem; font-weight: 900; color: white; }
+        .nav-logo span { background: linear-gradient(135deg, var(--blue), var(--purple)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        .nav-sep { width: 1px; height: 18px; background: var(--border); }
+        .nav-chapter-badge { display: flex; align-items: center; gap: 0.4rem; font-size: 0.72rem; font-weight: 600; color: var(--emerald); background: rgba(52,211,153,0.08); border: 1px solid rgba(52,211,153,0.15); padding: 0.2rem 0.7rem; border-radius: 50px; }
+        .nav-chapter-badge .dot { width: 5px; height: 5px; border-radius: 50%; background: var(--emerald); }
+        .nav-center { display: flex; gap: 0.25rem; }
+        .nav-center a { color: var(--text-muted); text-decoration: none; font-size: 0.78rem; font-weight: 500; padding: 0.35rem 0.7rem; border-radius: 6px; transition: all 0.2s; }
+        .nav-center a:hover { color: var(--text); background: rgba(52,211,153,0.1); }
+        .nav-right { display: flex; align-items: center; }
+        .nav-counter { font-family: 'JetBrains Mono', monospace; font-size: 0.72rem; color: var(--text-dim); background: var(--bg-card); padding: 0.25rem 0.6rem; border-radius: 20px; border: 1px solid var(--border); }
+
+        /* ===== SIDEBAR ===== */
+        .sidebar { position: fixed; left: 1.2rem; top: 50%; transform: translateY(-50%); z-index: 50; display: flex; flex-direction: column; gap: 4px; }
+        .sidebar a { width: 8px; height: 8px; border-radius: 50%; background: var(--border); transition: all 0.3s; display: block; position: relative; }
+        .sidebar a:hover { background: var(--text-muted); transform: scale(1.5); }
+        .sidebar a.active { background: var(--emerald); box-shadow: 0 0 8px rgba(52,211,153,0.5); transform: scale(1.5); }
+        .sidebar a .tooltip { position: absolute; left: 18px; top: 50%; transform: translateY(-50%); background: var(--bg-card); color: var(--text); padding: 0.3rem 0.7rem; border-radius: 6px; font-size: 0.65rem; white-space: nowrap; opacity: 0; pointer-events: none; transition: opacity 0.2s; border: 1px solid var(--border); }
+        .sidebar a:hover .tooltip { opacity: 1; }
+
+        /* ===== HERO ===== */
+        .chapter-hero { padding: 8rem 2rem 4rem; text-align: center; position: relative; overflow: hidden; }
+        .chapter-hero-bg { position: absolute; inset: 0; background: radial-gradient(ellipse at 30% 50%, rgba(52,211,153,0.1) 0%, transparent 60%), radial-gradient(ellipse at 70% 30%, rgba(59,130,246,0.08) 0%, transparent 50%); }
+        .chapter-hero-content { position: relative; max-width: 700px; margin: 0 auto; }
+        .chapter-label { display: inline-flex; align-items: center; gap: 0.5rem; font-size: 0.75rem; font-weight: 600; text-transform: uppercase; letter-spacing: 2px; color: var(--emerald); margin-bottom: 1.2rem; }
+        .chapter-label .ch-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--emerald); }
+        .chapter-hero h1 { font-size: clamp(2rem, 5vw, 3rem); font-weight: 900; letter-spacing: -1.5px; line-height: 1.15; margin-bottom: 0.8rem; }
+        .chapter-hero h1 .gradient { background: linear-gradient(135deg, var(--emerald), var(--blue)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        .chapter-hero-content > p { color: var(--text-muted); font-size: 1.05rem; max-width: 520px; margin: 0 auto; line-height: 1.7; }
+        .chapter-tags { display: flex; justify-content: center; gap: 0.5rem; flex-wrap: wrap; margin-top: 1.8rem; }
+        .chapter-tag { padding: 0.3rem 0.85rem; border-radius: 50px; font-size: 0.7rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
+
+        /* ===== SECTIONS ===== */
+        .content-section { max-width: 900px; margin: 0 auto; padding: 2rem 2rem 4rem; }
+        .section-block { position: relative; margin-bottom: 4rem; opacity: 0; transform: translateY(30px); transition: all 0.6s cubic-bezier(0.16, 1, 0.3, 1); }
+        .section-block.visible { opacity: 1; transform: translateY(0); }
+        .section-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 16px; overflow: hidden; }
+        .section-header { padding: 1.5rem 2rem 1rem; display: flex; align-items: flex-start; gap: 1rem; }
+        .section-icon { width: 44px; height: 44px; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 1.2rem; flex-shrink: 0; }
+        .section-header-text h2 { font-size: 1.3rem; font-weight: 800; letter-spacing: -0.5px; margin-bottom: 0.2rem; }
+        .section-header-text .subtitle { font-size: 0.85rem; color: var(--text-muted); line-height: 1.6; }
+        .section-body { padding: 0.5rem 2rem 2rem; }
+        .section-body p { color: var(--text-muted); font-size: 0.92rem; line-height: 1.8; margin-bottom: 1.2rem; }
+        .section-body p b { color: var(--text); }
+
+        /* ── Incident Hero ── */
+        .incident-hero { background: linear-gradient(135deg, rgba(52,211,153,0.08), rgba(59,130,246,0.05)); border: 1px solid rgba(52,211,153,0.15); border-radius: 14px; padding: 2rem; text-align: center; margin-bottom: 1.5rem; }
+        .incident-hero .big-number { font-family: 'JetBrains Mono', monospace; font-size: 2.5rem; font-weight: 800; background: linear-gradient(135deg, var(--emerald), var(--blue)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; margin: 0.8rem 0; line-height: 1.2; }
+        .stats-row { display: flex; gap: 1rem; margin: 1.5rem 0; }
+        .stat-pill { flex: 1; background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; padding: 1rem; text-align: center; }
+        .stat-pill .icon { font-size: 1.3rem; margin-bottom: 0.4rem; }
+        .stat-pill .val { font-family: 'JetBrains Mono', monospace; font-size: 1.3rem; font-weight: 800; background: linear-gradient(135deg, var(--emerald), var(--blue)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        .stat-pill .lbl { font-size: 0.65rem; color: var(--text-dim); text-transform: uppercase; letter-spacing: 1px; margin-top: 0.2rem; }
+
+        /* ── Flow Visual ── */
+        .flow-visual { background: var(--bg-code); border-radius: 14px; padding: 2rem; margin: 1.5rem 0; border: 1px solid var(--border); }
+        .flow-visual .title { font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: var(--text-dim); margin-bottom: 1.5rem; text-align: center; }
+        .flow-steps { display: flex; flex-direction: column; gap: 0.6rem; max-width: 550px; margin: 0 auto; }
+        .flow-step { display: flex; align-items: center; gap: 0.8rem; padding: 0.8rem 1rem; border-radius: 10px; }
+        .flow-step.write { background: rgba(52,211,153,0.06); border: 1px solid rgba(52,211,153,0.15); }
+        .flow-step.flush { background: rgba(59,130,246,0.06); border: 1px solid rgba(59,130,246,0.15); }
+        .flow-step.apply { background: rgba(139,92,246,0.06); border: 1px solid rgba(139,92,246,0.15); }
+        .flow-step.checkpoint { background: rgba(245,158,11,0.06); border: 1px solid rgba(245,158,11,0.15); }
+        .flow-num { width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 0.72rem; font-weight: 800; flex-shrink: 0; }
+        .flow-step.write .flow-num { background: rgba(52,211,153,0.15); color: var(--emerald); }
+        .flow-step.flush .flow-num { background: rgba(59,130,246,0.15); color: var(--blue); }
+        .flow-step.apply .flow-num { background: rgba(139,92,246,0.15); color: var(--purple); }
+        .flow-step.checkpoint .flow-num { background: rgba(245,158,11,0.15); color: var(--orange); }
+        .flow-text { font-size: 0.8rem; color: var(--text-muted); line-height: 1.5; }
+        .flow-text b { color: var(--text); }
+        .flow-arrow { text-align: center; color: var(--text-dim); font-size: 0.9rem; }
+        .flow-note { margin-top: 1.2rem; font-size: 0.78rem; color: var(--text-dim); text-align: center; }
+        .flow-note b { color: var(--emerald); }
+
+        /* ── Feature Grid ── */
+        .feat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.8rem; margin: 1.5rem 0; }
+        .feat-card { background: rgba(30,41,59,0.5); border: 1px solid var(--border); border-radius: 12px; padding: 1.2rem; display: flex; gap: 0.8rem; align-items: flex-start; }
+        .feat-card .feat-icon { font-size: 1.4rem; flex-shrink: 0; }
+        .feat-card h4 { font-size: 0.88rem; font-weight: 700; margin-bottom: 0.2rem; }
+        .feat-card p { font-size: 0.8rem; color: var(--text-dim); line-height: 1.5; margin: 0; }
+
+        /* ── Code Block ── */
+        .code-block { background: var(--bg-code); border: 1px solid var(--border); border-radius: 10px; padding: 1.2rem 1.5rem; margin: 1rem 0; font-family: 'JetBrains Mono', monospace; font-size: 0.82rem; color: var(--text-muted); line-height: 1.8; overflow-x: auto; }
+        .code-block .comment { color: var(--text-dim); }
+        .code-block .keyword { color: var(--purple); }
+        .code-block .fn { color: var(--blue); }
+        .code-block .val { color: var(--orange); }
+        .code-block .str { color: var(--green); }
+
+        /* ── Comparison Table ── */
+        .table-wrap { border-radius: 12px; overflow: hidden; margin: 1.5rem 0; border: 1px solid var(--border); }
+        .compare-table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+        .compare-table th { background: var(--bg-card); color: var(--text-muted); padding: 0.8rem 1rem; text-align: left; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; font-size: 0.68rem; border-bottom: 2px solid var(--border); }
+        .compare-table td { padding: 0.7rem 1rem; border-bottom: 1px solid rgba(51,65,85,0.5); color: var(--text-muted); }
+        .compare-table tr:nth-child(even) td { background: rgba(15,23,42,0.3); }
+        .compare-table tr:last-child td { border-bottom: none; }
+        .y { color: var(--green); font-weight: 700; }
+        .n { color: #fca5a5; font-weight: 700; }
+        .m { color: var(--orange); font-weight: 700; }
+
+        /* ── Analogy Box ── */
+        .analogy { background: rgba(52,211,153,0.05); border: 1px solid rgba(52,211,153,0.12); border-radius: 10px; padding: 1rem 1.2rem; margin: 1rem 0; font-size: 0.82rem; color: var(--text-muted); line-height: 1.6; }
+        .analogy b { color: #6ee7b7; }
+
+        /* ── Netflix Box ── */
+        .netflix-box { background: linear-gradient(135deg, rgba(239,68,68,0.06), rgba(239,68,68,0.02)); border: 1px solid rgba(239,68,68,0.15); border-radius: 14px; padding: 1.5rem; margin: 1.5rem 0; }
+        .netflix-box .nf-header { display: flex; align-items: center; gap: 0.6rem; margin-bottom: 1rem; }
+        .netflix-box .nf-logo { font-size: 1.3rem; }
+        .netflix-box .nf-title { font-size: 0.9rem; font-weight: 800; color: #fca5a5; }
+        .netflix-box .nf-subtitle { font-size: 0.7rem; color: var(--text-dim); }
+        .netflix-box p { font-size: 0.82rem; color: var(--text-muted); line-height: 1.7; margin-bottom: 0.8rem; }
+        .netflix-box p b { color: var(--text); }
+        .netflix-box .nf-api { background: var(--bg-code); border: 1px solid var(--border); border-radius: 8px; padding: 0.8rem 1rem; margin: 0.8rem 0; font-family: 'JetBrains Mono', monospace; font-size: 0.8rem; color: var(--emerald); }
+
+        /* ── Interview Box ── */
+        .interview-box { background: linear-gradient(135deg, rgba(52,211,153,0.06), rgba(59,130,246,0.04)); border: 1px solid rgba(52,211,153,0.15); border-radius: 14px; padding: 1.5rem; margin: 1.5rem 0; }
+        .interview-box .q { font-size: 0.85rem; font-weight: 700; color: var(--text); margin-bottom: 0.5rem; padding-left: 1rem; border-left: 3px solid var(--emerald); }
+        .interview-box .a { font-size: 0.82rem; color: var(--text-muted); line-height: 1.7; margin-top: 0.8rem; padding-left: 1rem; border-left: 3px solid var(--green); }
+        .interview-box .wrong { font-size: 0.82rem; color: var(--text-muted); line-height: 1.7; margin-top: 0.8rem; padding-left: 1rem; border-left: 3px solid var(--red); }
+        .interview-box .wrong b { color: #fca5a5; }
+        .interview-box .a b { color: #6ee7b7; }
+        .interview-box .label { font-size: 0.62rem; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 0.3rem; }
+        .interview-box .label.bad { color: var(--red); }
+        .interview-box .label.good { color: var(--green); }
+
+        /* ── Choice Cards ── */
+        .choice-section { display: flex; gap: 1rem; margin: 1.5rem 0; align-items: stretch; }
+        .choice-card { flex: 1; border-radius: 14px; padding: 1.5rem; position: relative; overflow: hidden; }
+        .choice-card::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px; }
+        .choice-card.good { background: rgba(16,185,129,0.04); border: 1px solid rgba(16,185,129,0.12); }
+        .choice-card.good::before { background: linear-gradient(90deg, transparent, var(--green), transparent); }
+        .choice-card.bad { background: rgba(239,68,68,0.04); border: 1px solid rgba(239,68,68,0.12); }
+        .choice-card.bad::before { background: linear-gradient(90deg, transparent, var(--red), transparent); }
+        .choice-card .card-icon { font-size: 1.8rem; margin-bottom: 0.8rem; }
+        .choice-card h3 { font-size: 1.1rem; font-weight: 700; margin-bottom: 0.4rem; }
+        .choice-card.good h3 { color: #6ee7b7; }
+        .choice-card.bad h3 { color: #fca5a5; }
+        .choice-card p { font-size: 0.82rem; color: var(--text-muted); line-height: 1.6; }
+        .choice-card ul { list-style: none; margin-top: 0.6rem; }
+        .choice-card ul li { font-size: 0.8rem; color: var(--text-muted); padding: 0.25rem 0; }
+        .choice-card ul li b { color: var(--text); }
+        .choice-divider { display: flex; align-items: center; justify-content: center; min-width: 40px; }
+        .choice-badge { background: linear-gradient(135deg, var(--emerald), var(--blue)); color: white; font-size: 0.75rem; font-weight: 800; width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; box-shadow: 0 0 20px rgba(52,211,153,0.3); }
+
+        /* ── System Map ── */
+        .system-map { background: var(--bg-code); border-radius: 14px; padding: 1.5rem; margin: 1.5rem 0; border: 1px solid var(--border); }
+        .system-map .title { font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: var(--text-dim); margin-bottom: 1rem; text-align: center; }
+        .map-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0.6rem; }
+        .map-item { border-radius: 10px; padding: 0.8rem; text-align: center; }
+        .map-item .map-icon { font-size: 1.2rem; margin-bottom: 0.3rem; }
+        .map-item .map-name { font-size: 0.75rem; font-weight: 700; }
+        .map-item .map-type { font-size: 0.58rem; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.8px; font-weight: 600; margin-top: 0.15rem; }
+
+        /* ── Takeaways ── */
+        .takeaways { display: flex; gap: 1rem; margin: 1.5rem 0; }
+        .tk { flex: 1; background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; padding: 1.3rem; position: relative; overflow: hidden; }
+        .tk::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px; }
+        .tk:nth-child(1)::before { background: linear-gradient(90deg, var(--emerald), var(--blue)); }
+        .tk:nth-child(2)::before { background: linear-gradient(90deg, var(--blue), var(--purple)); }
+        .tk:nth-child(3)::before { background: linear-gradient(90deg, var(--purple), var(--pink)); }
+        .tk:nth-child(4)::before { background: linear-gradient(90deg, var(--orange), var(--red)); }
+        .tk .tk-icon { font-size: 1.3rem; margin-bottom: 0.5rem; }
+        .tk h4 { font-size: 0.9rem; font-weight: 700; margin-bottom: 0.3rem; }
+        .tk p { font-size: 0.8rem; color: var(--text-dim); line-height: 1.6; }
+
+        /* ===== FOOTER ===== */
+        footer { border-top: 1px solid var(--border); padding: 3rem 2rem; text-align: center; }
+        footer p { color: var(--text-dim); font-size: 0.85rem; }
+        footer .gradient-line { width: 100px; height: 3px; background: linear-gradient(90deg, var(--emerald), var(--blue), var(--purple)); margin: 0 auto 1.5rem; border-radius: 2px; }
+        .nav-btn { display: inline-flex; align-items: center; gap: 0.5rem; padding: 0.7rem 1.5rem; background: linear-gradient(135deg, var(--emerald), var(--blue)); color: white; border: none; border-radius: 10px; font-size: 0.9rem; font-weight: 600; cursor: pointer; text-decoration: none; transition: all 0.3s; margin-top: 1rem; }
+        .nav-btn:hover { transform: translateY(-2px); box-shadow: 0 8px 30px rgba(52,211,153,0.3); }
+
+        @media (max-width: 768px) {
+            .sidebar { display: none; }
+            .nav-center { display: none; }
+            .choice-section { flex-direction: column; }
+            .choice-divider { min-width: 0; padding: 0.5rem 0; }
+            .feat-grid { grid-template-columns: 1fr; }
+            .takeaways { flex-direction: column; }
+            .stats-row { flex-wrap: wrap; }
+            .stat-pill { min-width: calc(50% - 0.5rem); }
+            .map-grid { grid-template-columns: 1fr 1fr; }
+        }
+    </style>
+</head>
+<body>
+
+    <nav>
+        <div class="nav-inner">
+            <div class="nav-left">
+                <a href="index.html" class="nav-logo"><div class="nav-logo-icon">SD</div><span>System Design for Dummies</span></a>
+                <div class="nav-sep"></div>
+                <div class="nav-chapter-badge"><div class="dot"></div>Chapter 7</div>
+            </div>
+            <div class="nav-center">
+                <a href="index.html">Home</a>
+                <a href="chapter1.html">Ch 1</a>
+                <a href="chapter3.html">Ch 3</a>
+                <a href="chapter4.html">Ch 4</a>
+                <a href="chapter5.html">Ch 5</a>
+                <a href="chapter6.html">Ch 6</a>
+            </div>
+            <div class="nav-right"><span class="nav-counter">8 sections</span></div>
+        </div>
+    </nav>
+
+    <div class="sidebar" id="sidebar">
+        <a href="#hero"><span class="tooltip">Intro</span></a>
+        <a href="#the-crash"><span class="tooltip">The Crash</span></a>
+        <a href="#what-is-wal"><span class="tooltip">What is WAL</span></a>
+        <a href="#how-it-works"><span class="tooltip">How It Works</span></a>
+        <a href="#crash-recovery"><span class="tooltip">Crash Recovery</span></a>
+        <a href="#beyond-recovery"><span class="tooltip">Beyond Recovery</span></a>
+        <a href="#netflix-wal"><span class="tooltip">Netflix's WAL</span></a>
+        <a href="#interview"><span class="tooltip">The Interview</span></a>
+        <a href="#takeaways"><span class="tooltip">Takeaways</span></a>
+    </div>
+
+    <!-- Hero -->
+    <section class="chapter-hero" id="hero">
+        <div class="chapter-hero-bg"></div>
+        <div class="chapter-hero-content">
+            <div class="chapter-label"><div class="ch-dot"></div>Chapter 07 &mdash; Deep Dive</div>
+            <h1><span class="gradient">Write-Ahead Logging</span><br>The Log That Saves Everything</h1>
+            <p>Your database just crashed mid-transaction. The debit went through. The credit didn't. Is the money gone? No. Because of WAL.</p>
+            <div class="chapter-tags">
+                <span class="chapter-tag" style="background: rgba(52,211,153,0.1); color: var(--emerald); border: 1px solid rgba(52,211,153,0.2);">Durability</span>
+                <span class="chapter-tag" style="background: rgba(59,130,246,0.1); color: var(--blue); border: 1px solid rgba(59,130,246,0.2);">Crash Recovery</span>
+                <span class="chapter-tag" style="background: rgba(139,92,246,0.1); color: var(--purple); border: 1px solid rgba(139,92,246,0.2);">Replication</span>
+                <span class="chapter-tag" style="background: rgba(245,158,11,0.1); color: var(--orange); border: 1px solid rgba(245,158,11,0.2);">CDC</span>
+            </div>
+        </div>
+    </section>
+
+    <div class="content-section">
+
+        <!-- 1: THE CRASH -->
+        <div class="section-block" id="the-crash">
+            <div class="section-card">
+                <div class="section-header">
+                    <div class="section-icon" style="background: linear-gradient(135deg, var(--red), var(--orange));">&#9889;</div>
+                    <div class="section-header-text">
+                        <h2>The Transaction That Never Finished</h2>
+                        <div class="subtitle">A bank transfer, a power failure, and the question every database must answer.</div>
+                    </div>
+                </div>
+                <div class="section-body">
+                    <div class="incident-hero">
+                        <p style="color: var(--text-muted); font-size: 0.95rem;">Alice sends $500 to Bob. The database debits Alice's account. Then the server loses power.</p>
+                        <div class="big-number">Is the $500 gone?</div>
+                        <p style="color: var(--text-muted); font-size: 0.95rem;">Alice's balance dropped by $500. Bob never received it. The data file is half-written.</p>
+                    </div>
+                    <div class="stats-row">
+                        <div class="stat-pill"><div class="icon">&#128176;</div><div class="val">$500</div><div class="lbl">In Transit</div></div>
+                        <div class="stat-pill"><div class="icon">&#9889;</div><div class="val">0</div><div class="lbl">Server Power</div></div>
+                        <div class="stat-pill"><div class="icon">&#128196;</div><div class="val">50%</div><div class="lbl">Write Complete</div></div>
+                        <div class="stat-pill"><div class="icon">&#10067;</div><div class="val">?</div><div class="lbl">Data Consistent?</div></div>
+                    </div>
+                    <p>Without any protection, that $500 vanishes. Alice is debited. Bob is never credited. The database has no memory of what it was trying to do.</p>
+                    <p>This is the fundamental problem every database must solve: <b>what happens when a write is interrupted halfway through?</b></p>
+                    <p>The answer, used by virtually every database on earth, is three words: <b>Write-Ahead Logging.</b></p>
+                </div>
+            </div>
+        </div>
+
+        <!-- 2: WHAT IS WAL -->
+        <div class="section-block" id="what-is-wal">
+            <div class="section-card">
+                <div class="section-header">
+                    <div class="section-icon" style="background: linear-gradient(135deg, var(--emerald), var(--blue));">&#128221;</div>
+                    <div class="section-header-text">
+                        <h2>What is Write-Ahead Logging?</h2>
+                        <div class="subtitle">One rule. Before changing any data, write what you're about to do to a log. First. Always.</div>
+                    </div>
+                </div>
+                <div class="section-body">
+                    <p>WAL is a protocol, not a tool. The rule is simple:</p>
+
+                    <div class="incident-hero">
+                        <div class="big-number">Log before data.</div>
+                        <p style="color: var(--text-muted); font-size: 0.95rem;">The log record must hit disk <b style="color: #6ee7b7;">before</b> the corresponding data change is written. No exceptions.</p>
+                    </div>
+
+                    <p>Think of it like a pilot's checklist. Before takeoff, every action is written down. If something goes wrong mid-flight, the checklist tells you exactly what was done and what wasn't. The database's WAL is that checklist.</p>
+
+                    <div class="choice-section">
+                        <div class="choice-card bad">
+                            <div class="card-icon">&#128165;</div>
+                            <h3>Without WAL</h3>
+                            <ul>
+                                <li><b>Crash mid-write:</b> Data file is half-updated, corrupted</li>
+                                <li><b>On restart:</b> No way to know what was in progress</li>
+                                <li><b>Result:</b> Data loss, inconsistency, manual recovery</li>
+                                <li><b>Impact:</b> Missing transactions, orphaned records</li>
+                            </ul>
+                        </div>
+                        <div class="choice-divider"><div class="choice-badge">VS</div></div>
+                        <div class="choice-card good">
+                            <div class="card-icon">&#128219;</div>
+                            <h3>With WAL</h3>
+                            <ul>
+                                <li><b>Crash mid-write:</b> Data file may be corrupt, but the log is intact</li>
+                                <li><b>On restart:</b> Replay the log, redo committed work, undo the rest</li>
+                                <li><b>Result:</b> Consistent state restored automatically</li>
+                                <li><b>Impact:</b> Zero data loss for committed transactions</li>
+                            </ul>
+                        </div>
+                    </div>
+
+                    <div class="analogy"><b>Analogy:</b> Imagine writing an exam in pencil directly on the answer sheet vs. first drafting answers on a rough sheet. If someone snatches the answer sheet mid-exam, your rough sheet has everything you did. You can reconstruct it. The WAL is your rough sheet.</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 3: HOW IT WORKS -->
+        <div class="section-block" id="how-it-works">
+            <div class="section-card">
+                <div class="section-header">
+                    <div class="section-icon" style="background: linear-gradient(135deg, var(--blue), var(--purple));">&#9881;</div>
+                    <div class="section-header-text">
+                        <h2>How WAL Works: Step by Step</h2>
+                        <div class="subtitle">The lifecycle of a single database write, from query to durability.</div>
+                    </div>
+                </div>
+                <div class="section-body">
+                    <div class="flow-visual">
+                        <div class="title">The WAL Write Path</div>
+                        <div class="flow-steps">
+                            <div class="flow-step write"><div class="flow-num">1</div><div class="flow-text"><b>Transaction begins.</b> User executes <code style="font-family: 'JetBrains Mono', monospace; font-size: 0.78rem; color: var(--emerald);">UPDATE accounts SET balance = balance - 500 WHERE user = 'Alice'</code></div></div>
+                            <div class="flow-arrow">&#8595;</div>
+                            <div class="flow-step write"><div class="flow-num">2</div><div class="flow-text"><b>Write to WAL buffer.</b> The change is recorded as a WAL record in memory. "Debit $500 from Alice, page 42, offset 128."</div></div>
+                            <div class="flow-arrow">&#8595;</div>
+                            <div class="flow-step flush"><div class="flow-num">3</div><div class="flow-text"><b>Flush WAL to disk (fsync).</b> The WAL record is forced to permanent storage. This is the durability guarantee. <b>Until this completes, the transaction is not committed.</b></div></div>
+                            <div class="flow-arrow">&#8595;</div>
+                            <div class="flow-step apply"><div class="flow-num">4</div><div class="flow-text"><b>Modify data page in memory.</b> The actual data buffer (Alice's row) is updated in RAM. This is the "dirty page." It hasn't reached disk yet.</div></div>
+                            <div class="flow-arrow">&#8595;</div>
+                            <div class="flow-step apply"><div class="flow-num">5</div><div class="flow-text"><b>Transaction commits.</b> The database acknowledges the write to the client. The data file may not be updated yet &mdash; but the WAL is on disk. That's enough.</div></div>
+                            <div class="flow-arrow">&#8595;</div>
+                            <div class="flow-step checkpoint"><div class="flow-num">6</div><div class="flow-text"><b>Checkpoint (later).</b> Periodically, dirty pages are flushed to disk. The WAL records before this point can be recycled. This is how the WAL stays bounded in size.</div></div>
+                        </div>
+                        <div class="flow-note"><b>Key insight:</b> Steps 1&ndash;5 happen on every write. Step 6 happens in the background. The data file is <b>always</b> behind the WAL. That's by design.</div>
+                    </div>
+
+                    <p><b>Why not just write data directly to disk?</b></p>
+
+                    <p>Because data files have <b>random write patterns</b>. Alice's row is on page 42. Bob's is on page 7891. Updating both means two random disk seeks. Slow.</p>
+
+                    <p>The WAL is a <b>sequential, append-only</b> file. Every write goes to the end. Sequential writes are 10&ndash;100x faster than random writes on both SSDs and spinning disks. The WAL absorbs the write speed, and the data files catch up later.</p>
+
+                    <div class="table-wrap">
+                        <table class="compare-table">
+                            <tr><th>Write Pattern</th><th>HDD Speed</th><th>SSD Speed</th><th>WAL Uses</th></tr>
+                            <tr><td><b>Sequential (append)</b></td><td class="y">100&ndash;200 MB/s</td><td class="y">500&ndash;3000 MB/s</td><td class="y">Yes</td></tr>
+                            <tr><td><b>Random (in-place)</b></td><td class="n">0.5&ndash;2 MB/s</td><td class="m">50&ndash;500 MB/s</td><td class="n">No</td></tr>
+                        </table>
+                    </div>
+
+                    <div class="analogy"><b>The staff-level detail:</b> Postgres enables <code style="font-family: 'JetBrains Mono', monospace; font-size: 0.78rem; color: var(--emerald);">full_page_writes</code> by default. After every checkpoint, the first modification to each data page writes the <b>entire page</b> to WAL, not just the change. Why? Because a crash during an OS-level page write can leave a half-written page. Storing the full page image in WAL guarantees it can be restored correctly. This is called <b>torn page protection</b>.</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 4: CRASH RECOVERY -->
+        <div class="section-block" id="crash-recovery">
+            <div class="section-card">
+                <div class="section-header">
+                    <div class="section-icon" style="background: linear-gradient(135deg, var(--orange), var(--red));">&#128260;</div>
+                    <div class="section-header-text">
+                        <h2>Crash Recovery: What Happens on Restart</h2>
+                        <div class="subtitle">The database starts up. It doesn't know if the last shutdown was clean. Here's the recovery protocol.</div>
+                    </div>
+                </div>
+                <div class="section-body">
+                    <div class="flow-visual">
+                        <div class="title">Recovery Process</div>
+                        <div class="flow-steps">
+                            <div class="flow-step write"><div class="flow-num">1</div><div class="flow-text"><b>Read checkpoint record.</b> Find the last known consistent state. This is the starting point for recovery.</div></div>
+                            <div class="flow-arrow">&#8595;</div>
+                            <div class="flow-step flush"><div class="flow-num">2</div><div class="flow-text"><b>Scan WAL forward from checkpoint.</b> Read every WAL record from the checkpoint to the end of the log.</div></div>
+                            <div class="flow-arrow">&#8595;</div>
+                            <div class="flow-step apply"><div class="flow-num">3</div><div class="flow-text"><b>REDO committed transactions.</b> Replay all changes from committed transactions that may not have made it to data files. If the page already has the change, skip it.</div></div>
+                            <div class="flow-arrow">&#8595;</div>
+                            <div class="flow-step checkpoint"><div class="flow-num">4</div><div class="flow-text"><b>UNDO uncommitted transactions.</b> Any transaction that started but never committed is rolled back. The partial changes are removed.</div></div>
+                        </div>
+                        <div class="flow-note"><b>Result:</b> Database is back to a consistent state. Committed work is preserved. Uncommitted work is discarded. Zero data loss.</div>
+                    </div>
+
+                    <p>Back to Alice and Bob: the database replays the WAL. It sees "debit Alice $500" was committed but "credit Bob $500" was not. It undoes the debit. Alice's balance is restored. No money is lost.</p>
+
+                    <p>Or, if both the debit and credit were committed before the crash &mdash; it redoes both. Bob gets his money. Either way, the database is consistent.</p>
+
+                    <div class="feat-grid">
+                        <div class="feat-card">
+                            <div class="feat-icon" style="color: var(--green);">&#9200;</div>
+                            <div>
+                                <h4 style="color: var(--green);">Recovery Time</h4>
+                                <p>Proportional to WAL generated since last checkpoint. Frequent checkpoints = faster recovery. Tradeoff: more I/O during normal operations.</p>
+                            </div>
+                        </div>
+                        <div class="feat-card">
+                            <div class="feat-icon" style="color: var(--blue);">&#128196;</div>
+                            <div>
+                                <h4 style="color: var(--blue);">Idempotent Replay</h4>
+                                <p>WAL replay is safe to run multiple times. Each record includes enough info (page ID, offset, LSN) to detect if it's already applied. Replaying twice produces the same result.</p>
+                            </div>
+                        </div>
+                        <div class="feat-card">
+                            <div class="feat-icon" style="color: var(--purple);">&#128274;</div>
+                            <div>
+                                <h4 style="color: var(--purple);">Write Durability</h4>
+                                <p>A transaction is only committed after its WAL record hits disk via fsync. Not when data is written. Not when the client is notified. When the WAL is flushed.</p>
+                            </div>
+                        </div>
+                        <div class="feat-card">
+                            <div class="feat-icon" style="color: var(--orange);">&#9888;</div>
+                            <div>
+                                <h4 style="color: var(--orange);">Disk Failure ≠ WAL Recovery</h4>
+                                <p>WAL protects against process/power crashes, not disk failure. For that you need replication or backups. WAL assumes the disk itself is reliable.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 5: BEYOND CRASH RECOVERY -->
+        <div class="section-block" id="beyond-recovery">
+            <div class="section-card">
+                <div class="section-header">
+                    <div class="section-icon" style="background: linear-gradient(135deg, var(--purple), var(--pink));">&#128640;</div>
+                    <div class="section-header-text">
+                        <h2>Beyond Crash Recovery</h2>
+                        <div class="subtitle">WAL isn't just a safety net. It's the primitive that powers replication, CDC, and time travel.</div>
+                    </div>
+                </div>
+                <div class="section-body">
+                    <p>Once you have a sequential log of every change, you can do much more than recover from crashes.</p>
+
+                    <div class="feat-grid">
+                        <div class="feat-card">
+                            <div class="feat-icon">&#128257;</div>
+                            <div>
+                                <h4>Streaming Replication</h4>
+                                <p>Postgres streams WAL records to replicas in real time. The replica replays them, staying in sync with the primary. That's how read replicas work &mdash; they're just WAL replay machines.</p>
+                            </div>
+                        </div>
+                        <div class="feat-card">
+                            <div class="feat-icon">&#128202;</div>
+                            <div>
+                                <h4>Change Data Capture (CDC)</h4>
+                                <p>Debezium reads the Postgres WAL and streams every row-level change to Kafka. No application code changes. No triggers. The WAL is the source of truth, and CDC just reads it.</p>
+                            </div>
+                        </div>
+                        <div class="feat-card">
+                            <div class="feat-icon">&#9200;</div>
+                            <div>
+                                <h4>Point-in-Time Recovery (PITR)</h4>
+                                <p>Keep a base backup + archived WAL files. Replay WAL up to any specific timestamp. "Restore the database to exactly 2:47 PM last Tuesday." That's PITR.</p>
+                            </div>
+                        </div>
+                        <div class="feat-card">
+                            <div class="feat-icon">&#128203;</div>
+                            <div>
+                                <h4>Logical Decoding</h4>
+                                <p>Postgres can decode WAL into human-readable changes: "INSERT into users: id=42, name='Alice'." This powers real-time event streaming from the database without polling.</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <p><b>The staff-level insight:</b> Crash recovery, replication, CDC, and PITR are not four separate systems. They are four <b>consumers of the same WAL</b>. One log. Four use cases. This is why WAL is the most important primitive in database architecture.</p>
+
+                    <div class="table-wrap">
+                        <table class="compare-table">
+                            <tr><th>Use Case</th><th>Who Reads the WAL</th><th>What Happens</th></tr>
+                            <tr><td><b>Crash Recovery</b></td><td>Database itself (on restart)</td><td>Redo committed, undo uncommitted</td></tr>
+                            <tr><td><b>Streaming Replication</b></td><td>Standby replica</td><td>Replays WAL records to stay in sync</td></tr>
+                            <tr><td><b>CDC</b></td><td>Debezium / external consumer</td><td>Streams row changes to Kafka, Elasticsearch, etc.</td></tr>
+                            <tr><td><b>PITR</b></td><td>DBA during disaster recovery</td><td>Replays WAL to a specific timestamp</td></tr>
+                            <tr><td><b>Logical Decoding</b></td><td>Application / event system</td><td>Converts WAL into structured change events</td></tr>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 6: NETFLIX'S WAL -->
+        <div class="section-block" id="netflix-wal">
+            <div class="section-card">
+                <div class="section-header">
+                    <div class="section-icon" style="background: linear-gradient(135deg, var(--red), var(--orange));">&#127916;</div>
+                    <div class="section-header-text">
+                        <h2>How Netflix Built a WAL for Their Entire Data Platform</h2>
+                        <div class="subtitle">Not a database WAL. A platform-wide WAL that captures, guarantees, and delivers every data change.</div>
+                    </div>
+                </div>
+                <div class="section-body">
+                    <div class="netflix-box">
+                        <div class="nf-header">
+                            <div class="nf-logo">&#127916;</div>
+                            <div>
+                                <div class="nf-title">Netflix Tech Blog</div>
+                                <div class="nf-subtitle">"Building a Resilient Data Platform with Write-Ahead Log at Netflix"</div>
+                            </div>
+                        </div>
+                        <p>Netflix published a detailed blog on how they built a <b>generic WAL abstraction</b> across their data platform. This isn't a database-level WAL &mdash; it's a <b>distributed system primitive</b> that sits between services and datastores.</p>
+                    </div>
+
+                    <p><b>The problems Netflix faced:</b></p>
+
+                    <div class="feat-grid">
+                        <div class="feat-card">
+                            <div class="feat-icon">&#128165;</div>
+                            <div>
+                                <h4>Accidental Data Loss</h4>
+                                <p>Writes to databases would occasionally fail silently. Without a durable log of intent, there was no way to detect or recover missing writes.</p>
+                            </div>
+                        </div>
+                        <div class="feat-card">
+                            <div class="feat-icon">&#128260;</div>
+                            <div>
+                                <h4>Data Corruption</h4>
+                                <p>Partial writes or race conditions across services would corrupt data. No single source of truth existed to reconcile what happened.</p>
+                            </div>
+                        </div>
+                        <div class="feat-card">
+                            <div class="feat-icon">&#128203;</div>
+                            <div>
+                                <h4>Multi-Datastore Sync</h4>
+                                <p>Netflix writes to Cassandra AND Elasticsearch for the same data. Keeping them in sync without a shared log was fragile and error-prone.</p>
+                            </div>
+                        </div>
+                        <div class="feat-card">
+                            <div class="feat-icon">&#9200;</div>
+                            <div>
+                                <h4>Delayed Processing</h4>
+                                <p>Many services needed "execute this later" semantics &mdash; delay queues. Building them from scratch every time was wasteful and unreliable.</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <p><b>Netflix's solution: a generic WAL with one API.</b></p>
+
+                    <div class="netflix-box">
+                        <div class="nf-api">WriteToLog(data, options)</div>
+                        <p>One endpoint. The WAL captures the data change, guarantees durability, and delivers it to downstream consumers. The underlying queue technology (Kafka, SQS, etc.) is abstracted away &mdash; <b>swappable without code changes</b>.</p>
+                    </div>
+
+                    <p><b>What Netflix uses their WAL for:</b></p>
+
+                    <div class="table-wrap">
+                        <table class="compare-table">
+                            <tr><th>Use Case</th><th>How WAL Helps</th></tr>
+                            <tr><td><b>Delay Queues</b></td><td>Offload a request to WAL with a delay. WAL guarantees delivery after the specified time. Most common use case.</td></tr>
+                            <tr><td><b>Cross-Region Replication</b></td><td>WAL captures writes in one region and reliably replays them in others &mdash; even for datastores that don't natively support replication.</td></tr>
+                            <tr><td><b>Secondary Indices</b></td><td>When data is written to Cassandra, WAL delivers the change to Elasticsearch to keep the search index in sync.</td></tr>
+                            <tr><td><b>Multi-Partition Updates</b></td><td>Coordinating writes across multiple partitions or datastores. WAL provides the durability and ordering guarantee.</td></tr>
+                        </table>
+                    </div>
+
+                    <p><b>The staff-level insight from Netflix's approach:</b></p>
+
+                    <p>Netflix recognized that <b>WAL is not just a database concept</b>. It's a distributed systems primitive. Any time you need to guarantee that a data change is durable and eventually delivered &mdash; regardless of crashes, network failures, or downstream outages &mdash; you need a write-ahead log.</p>
+
+                    <p>Their abstraction proves that the same principle Postgres uses internally for crash recovery can be lifted to the <b>application layer</b> to solve data durability, multi-datastore consistency, and delayed processing at platform scale.</p>
+
+                    <div class="analogy"><b>Key insight:</b> Database WAL protects one database from crashes. Netflix's WAL protects an entire distributed data platform from data loss, inconsistency, and failed deliveries. Same principle. Bigger blast radius.</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 7: THE INTERVIEW -->
+        <div class="section-block" id="interview">
+            <div class="section-card">
+                <div class="section-header">
+                    <div class="section-icon" style="background: linear-gradient(135deg, var(--emerald), var(--blue));">&#128188;</div>
+                    <div class="section-header-text">
+                        <h2>The System Design Interview</h2>
+                        <div class="subtitle">"How does the database guarantee durability?" &mdash; The question behind every storage design.</div>
+                    </div>
+                </div>
+                <div class="section-body">
+                    <div class="interview-box">
+                        <div class="q">"You're designing a payment system. How do you ensure no transaction is lost during a crash?"</div>
+                        <div class="label bad">&#10008; THE REJECTED ANSWER</div>
+                        <div class="wrong">"I'll use a reliable database like Postgres. <b>It handles durability automatically.</b>"</div>
+                        <div style="margin-top: 0.5rem; font-size: 0.78rem; color: var(--text-dim);">Interviewer thinking: "They don't understand how durability actually works."</div>
+                    </div>
+
+                    <div class="interview-box" style="margin-top: 1rem;">
+                        <div class="q">Same question. Better answer.</div>
+                        <div class="label good">&#10004; THE STAFF-LEVEL ANSWER</div>
+                        <div class="a">"The database uses <b>write-ahead logging</b>. Before any data change hits the data file, the intent is written to a sequential, append-only log and fsynced to disk. If the server crashes, on restart it replays the WAL &mdash; redoing committed transactions and undoing incomplete ones. This is how Postgres, MySQL, and every serious database guarantees ACID durability. For our payment system, I'd also ensure <b>WAL archiving</b> is enabled for point-in-time recovery, and stream the WAL to a standby replica for high availability."</div>
+                    </div>
+
+                    <p><b>When to bring up WAL in interviews:</b></p>
+
+                    <div class="feat-grid">
+                        <div class="feat-card">
+                            <div class="feat-icon">&#128176;</div>
+                            <div>
+                                <h4>"Design a payment system"</h4>
+                                <p>Durability is non-negotiable. WAL + fsync + replication is the standard answer for "how do you not lose money."</p>
+                            </div>
+                        </div>
+                        <div class="feat-card">
+                            <div class="feat-icon">&#128195;</div>
+                            <div>
+                                <h4>"Design a database"</h4>
+                                <p>WAL is the foundation. Write path, recovery, replication &mdash; all built on the same log. Show you understand the internals.</p>
+                            </div>
+                        </div>
+                        <div class="feat-card">
+                            <div class="feat-icon">&#128202;</div>
+                            <div>
+                                <h4>"How do you keep two datastores in sync?"</h4>
+                                <p>CDC via WAL. Debezium reads the WAL and streams changes to Kafka. No dual-write bugs. The WAL is the single source of truth.</p>
+                            </div>
+                        </div>
+                        <div class="feat-card">
+                            <div class="feat-icon">&#128260;</div>
+                            <div>
+                                <h4>"How does replication work?"</h4>
+                                <p>Streaming replication = shipping WAL records to replicas. The replica is a WAL replay machine. Show you know it's not magic.</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <p><b>The golden phrase:</b> "WAL gives us durability, replication, CDC, and point-in-time recovery &mdash; all from the same mechanism. It's one log serving four purposes."</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- 8: TAKEAWAYS -->
+        <div class="section-block" id="takeaways">
+            <div class="section-card">
+                <div class="section-header">
+                    <div class="section-icon" style="background: linear-gradient(135deg, var(--green), var(--emerald));">&#127919;</div>
+                    <div class="section-header-text">
+                        <h2>Key Takeaways</h2>
+                        <div class="subtitle">What to remember about Write-Ahead Logging</div>
+                    </div>
+                </div>
+                <div class="section-body">
+                    <div class="takeaways">
+                        <div class="tk"><div class="tk-icon">&#128221;</div><h4>Log Before Data</h4><p>The WAL record hits disk before the data change. That's the entire durability guarantee. Everything else follows from this one rule.</p></div>
+                        <div class="tk"><div class="tk-icon">&#128260;</div><h4>One Log, Many Uses</h4><p>Crash recovery, replication, CDC, PITR &mdash; all consumers of the same WAL. Understanding WAL means understanding how databases actually work.</p></div>
+                        <div class="tk"><div class="tk-icon">&#127916;</div><h4>WAL Beyond Databases</h4><p>Netflix built a platform-wide WAL for data durability, cross-region replication, and delay queues. The concept scales beyond a single database.</p></div>
+                        <div class="tk"><div class="tk-icon">&#9889;</div><h4>Sequential Writes Win</h4><p>WAL is fast because it's append-only. Sequential writes are 10&ndash;100x faster than random. The data files catch up later via checkpoints.</p></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <footer>
+        <div class="gradient-line"></div>
+        <p>System Design for Dummies &mdash; Chapter 7: Write-Ahead Logging (WAL)</p>
+        <div style="margin-top: 1.5rem; display: flex; gap: 1rem; justify-content: center;">
+            <a href="chapter6.html" class="nav-btn" style="background: var(--bg-card); border: 1px solid var(--border);">&larr; Ch 6: Consistent Hashing</a>
+            <a href="index.html" class="nav-btn">All Chapters</a>
+        </div>
+    </footer>
+
+    <script>
+        const blocks = document.querySelectorAll('.section-block');
+        const observer = new IntersectionObserver((entries) => {
+            entries.forEach(entry => { if (entry.isIntersecting) entry.target.classList.add('visible'); });
+        }, { threshold: 0.1 });
+        blocks.forEach(b => observer.observe(b));
+
+        const sidebarLinks = document.querySelectorAll('.sidebar a');
+        const sections = document.querySelectorAll('[id]');
+        window.addEventListener('scroll', () => {
+            let current = '';
+            sections.forEach(section => {
+                if (window.scrollY >= section.offsetTop - 200) current = section.getAttribute('id');
+            });
+            sidebarLinks.forEach(link => {
+                link.classList.remove('active');
+                if (link.getAttribute('href') === '#' + current) link.classList.add('active');
+            });
+        });
+    </script>
+
+    <script>
+        if (new URLSearchParams(window.location.search).has('print')) {
+            const s = document.createElement('style');
+            s.textContent = `
+                .section-block { opacity:1!important; transform:none!important; transition:none!important; }
+                nav, .sidebar { position:relative!important; }
+                .sidebar { display:none!important; }
+                nav { display:none!important; }
+                @media print {
+                    * { -webkit-print-color-adjust:exact!important; print-color-adjust:exact!important; }
+                    body { background: var(--bg)!important; }
+                    .chapter-hero { min-height: 100vh!important; display: flex!important; flex-direction: column!important; align-items: center!important; justify-content: center!important; padding: 2rem!important; page-break-after: always!important; }
+                    .section-block { page-break-before: always!important; page-break-inside: avoid!important; }
+                    .section-card { page-break-inside: avoid!important; }
+                    .choice-section, .feat-grid, .stats-row, .takeaways, .flow-visual, .system-map, .interview-box, .table-wrap, .incident-hero, .analogy, .netflix-box, .code-block { page-break-inside: avoid!important; }
+                    footer { page-break-before: always!important; }
+                    .content-section { padding: 0 2rem!important; }
+                }
+            `;
+            document.head.appendChild(s);
+            document.querySelectorAll('.section-block').forEach(el => {
+                el.style.setProperty('opacity','1','important');
+                el.style.setProperty('transform','none','important');
+                el.classList.add('visible');
+            });
+            window.addEventListener('load', () => setTimeout(() => window.print(), 500));
+        }
+    </script>
+
+</body>
+</html>
