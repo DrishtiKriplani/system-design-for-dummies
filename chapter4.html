@@ -625,9 +625,10 @@
                 .sidebar { display:none!important; }
                 nav { display:none!important; }
 
+                @page { margin: 0; }
                 @media print {
                     * { -webkit-print-color-adjust:exact!important; print-color-adjust:exact!important; }
-                    body { background: var(--bg)!important; }
+                    body { background: var(--bg)!important; margin: 0!important; }
 
                     /* Title page: centered, full page */
                     .chapter-hero {
