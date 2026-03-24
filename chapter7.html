@@ -716,9 +716,10 @@
                 nav, .sidebar { position:relative!important; }
                 .sidebar { display:none!important; }
                 nav { display:none!important; }
+                @page { margin: 0; }
                 @media print {
                     * { -webkit-print-color-adjust:exact!important; print-color-adjust:exact!important; }
-                    body { background: var(--bg)!important; }
+                    body { background: var(--bg)!important; margin: 0!important; }
                     .chapter-hero { min-height: 100vh!important; display: flex!important; flex-direction: column!important; align-items: center!important; justify-content: center!important; padding: 2rem!important; page-break-after: always!important; }
                     .section-block { page-break-before: always!important; page-break-inside: avoid!important; }
                     .section-card { page-break-inside: avoid!important; }
