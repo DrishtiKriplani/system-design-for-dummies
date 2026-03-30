@@ -1,0 +1,690 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ch 8: Rate Limiting &mdash; System Design for Dummies</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧠</text></svg>">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap');
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        :root {
+            --bg: #0f172a; --bg-card: #1e293b; --bg-code: #0d1117;
+            --text: #f8fafc; --text-muted: #94a3b8; --text-dim: #64748b;
+            --border: #334155; --blue: #3b82f6; --green: #10b981;
+            --orange: #f59e0b; --purple: #8b5cf6; --pink: #ec4899;
+            --red: #ef4444; --cyan: #06b6d4; --indigo: #6366f1;
+            --amber: #f59e0b;
+        }
+        html { scroll-behavior: smooth; scrollbar-width: thin; scrollbar-color: var(--border) var(--bg); }
+        body { font-family: 'Inter', -apple-system, sans-serif; background: var(--bg); color: var(--text); line-height: 1.6; overflow-x: hidden; }
+
+        /* ===== NAV ===== */
+        nav { position: fixed; top: 0; left: 0; right: 0; z-index: 100; background: rgba(15,23,42,0.85); backdrop-filter: blur(20px); border-bottom: 1px solid rgba(51,65,85,0.5); }
+        .nav-inner { max-width: 1100px; margin: 0 auto; padding: 0.65rem 2rem; display: flex; align-items: center; justify-content: space-between; }
+        .nav-left { display: flex; align-items: center; gap: 1rem; }
+        .nav-logo { display: flex; align-items: center; gap: 0.6rem; font-weight: 800; font-size: 0.95rem; text-decoration: none; color: var(--text); letter-spacing: -0.5px; }
+        .nav-logo-icon { width: 28px; height: 28px; border-radius: 7px; background: linear-gradient(135deg, var(--blue), var(--purple)); display: flex; align-items: center; justify-content: center; font-size: 0.65rem; font-weight: 900; color: white; }
+        .nav-logo span { background: linear-gradient(135deg, var(--blue), var(--purple)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        .nav-sep { width: 1px; height: 18px; background: var(--border); }
+        .nav-chapter-badge { display: flex; align-items: center; gap: 0.4rem; font-size: 0.72rem; font-weight: 600; color: var(--orange); background: rgba(245,158,11,0.08); border: 1px solid rgba(245,158,11,0.15); padding: 0.2rem 0.7rem; border-radius: 50px; }
+        .nav-chapter-badge .dot { width: 5px; height: 5px; border-radius: 50%; background: var(--orange); }
+        .nav-center { display: flex; gap: 0.25rem; }
+        .nav-center a { color: var(--text-muted); text-decoration: none; font-size: 0.78rem; font-weight: 500; padding: 0.35rem 0.7rem; border-radius: 6px; transition: all 0.2s; }
+        .nav-center a:hover { color: var(--text); background: rgba(245,158,11,0.1); }
+        .nav-right { display: flex; align-items: center; }
+        .nav-counter { font-family: 'JetBrains Mono', monospace; font-size: 0.72rem; color: var(--text-dim); background: var(--bg-card); padding: 0.25rem 0.6rem; border-radius: 20px; border: 1px solid var(--border); }
+
+        /* ===== SIDEBAR ===== */
+        .sidebar { position: fixed; left: 1.2rem; top: 50%; transform: translateY(-50%); z-index: 50; display: flex; flex-direction: column; gap: 4px; }
+        .sidebar a { width: 8px; height: 8px; border-radius: 50%; background: var(--border); transition: all 0.3s; display: block; position: relative; }
+        .sidebar a:hover { background: var(--text-muted); transform: scale(1.5); }
+        .sidebar a.active { background: var(--orange); box-shadow: 0 0 8px rgba(245,158,11,0.5); transform: scale(1.5); }
+        .sidebar a .tooltip { position: absolute; left: 18px; top: 50%; transform: translateY(-50%); background: var(--bg-card); color: var(--text); padding: 0.3rem 0.7rem; border-radius: 6px; font-size: 0.65rem; white-space: nowrap; opacity: 0; pointer-events: none; transition: opacity 0.2s; border: 1px solid var(--border); }
+        .sidebar a:hover .tooltip { opacity: 1; }
+
+        /* ===== HERO ===== */
+        .chapter-hero { padding: 8rem 2rem 4rem; text-align: center; position: relative; overflow: hidden; }
+        .chapter-hero-bg { position: absolute; inset: 0; background: radial-gradient(ellipse at 30% 50%, rgba(245,158,11,0.1) 0%, transparent 60%), radial-gradient(ellipse at 70% 30%, rgba(239,68,68,0.08) 0%, transparent 50%); }
+        .chapter-hero-content { position: relative; max-width: 700px; margin: 0 auto; }
+        .chapter-label { display: inline-flex; align-items: center; gap: 0.5rem; font-size: 0.75rem; font-weight: 600; text-transform: uppercase; letter-spacing: 2px; color: var(--orange); margin-bottom: 1.2rem; }
+        .chapter-label .ch-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--orange); }
+        .chapter-hero h1 { font-size: clamp(2rem, 5vw, 3rem); font-weight: 900; letter-spacing: -1.5px; line-height: 1.15; margin-bottom: 0.8rem; }
+        .chapter-hero h1 .gradient { background: linear-gradient(135deg, var(--orange), var(--red)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        .chapter-hero-content > p { color: var(--text-muted); font-size: 1.05rem; max-width: 520px; margin: 0 auto; line-height: 1.7; }
+        .chapter-tags { display: flex; justify-content: center; gap: 0.5rem; flex-wrap: wrap; margin-top: 1.8rem; }
+        .chapter-tag { padding: 0.3rem 0.85rem; border-radius: 50px; font-size: 0.7rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
+
+        /* ===== SECTIONS ===== */
+        .content-section { max-width: 900px; margin: 0 auto; padding: 2rem 2rem 4rem; }
+        .section-block { position: relative; margin-bottom: 4rem; opacity: 0; transform: translateY(30px); transition: all 0.6s cubic-bezier(0.16, 1, 0.3, 1); }
+        .section-block.visible { opacity: 1; transform: translateY(0); }
+        .section-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 16px; overflow: hidden; }
+        .section-header { padding: 1.5rem 2rem 1rem; display: flex; align-items: flex-start; gap: 1rem; }
+        .section-icon { width: 44px; height: 44px; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 1.2rem; flex-shrink: 0; }
+        .section-header-text h2 { font-size: 1.3rem; font-weight: 800; letter-spacing: -0.5px; margin-bottom: 0.2rem; }
+        .section-header-text .subtitle { font-size: 0.85rem; color: var(--text-muted); line-height: 1.6; }
+        .section-body { padding: 0.5rem 2rem 2rem; }
+        .section-body p { color: var(--text-muted); font-size: 0.92rem; line-height: 1.8; margin-bottom: 1.2rem; }
+        .section-body p b { color: var(--text); }
+
+        /* ── Incident Hero ── */
+        .incident-hero { background: linear-gradient(135deg, rgba(245,158,11,0.08), rgba(239,68,68,0.05)); border: 1px solid rgba(245,158,11,0.15); border-radius: 14px; padding: 2rem; text-align: center; margin-bottom: 1.5rem; }
+        .incident-hero .big-number { font-family: 'JetBrains Mono', monospace; font-size: 2.5rem; font-weight: 800; background: linear-gradient(135deg, var(--orange), var(--red)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; margin: 0.8rem 0; line-height: 1.2; }
+        .stats-row { display: flex; gap: 1rem; margin: 1.5rem 0; }
+        .stat-pill { flex: 1; background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; padding: 1rem; text-align: center; }
+        .stat-pill .icon { font-size: 1.3rem; margin-bottom: 0.4rem; }
+        .stat-pill .val { font-family: 'JetBrains Mono', monospace; font-size: 1.3rem; font-weight: 800; background: linear-gradient(135deg, var(--orange), var(--red)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        .stat-pill .lbl { font-size: 0.65rem; color: var(--text-dim); text-transform: uppercase; letter-spacing: 1px; margin-top: 0.2rem; }
+
+        /* ── Flow Visual ── */
+        .flow-visual { background: var(--bg-code); border-radius: 14px; padding: 2rem; margin: 1.5rem 0; border: 1px solid var(--border); }
+        .flow-visual .title { font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: var(--text-dim); margin-bottom: 1.5rem; text-align: center; }
+        .flow-steps { display: flex; flex-direction: column; gap: 0.6rem; max-width: 550px; margin: 0 auto; }
+        .flow-step { display: flex; align-items: center; gap: 0.8rem; padding: 0.8rem 1rem; border-radius: 10px; }
+        .flow-step.write { background: rgba(245,158,11,0.06); border: 1px solid rgba(245,158,11,0.15); }
+        .flow-step.flush { background: rgba(59,130,246,0.06); border: 1px solid rgba(59,130,246,0.15); }
+        .flow-step.apply { background: rgba(139,92,246,0.06); border: 1px solid rgba(139,92,246,0.15); }
+        .flow-step.checkpoint { background: rgba(239,68,68,0.06); border: 1px solid rgba(239,68,68,0.15); }
+        .flow-num { width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 0.72rem; font-weight: 800; flex-shrink: 0; }
+        .flow-step.write .flow-num { background: rgba(245,158,11,0.15); color: var(--orange); }
+        .flow-step.flush .flow-num { background: rgba(59,130,246,0.15); color: var(--blue); }
+        .flow-step.apply .flow-num { background: rgba(139,92,246,0.15); color: var(--purple); }
+        .flow-step.checkpoint .flow-num { background: rgba(239,68,68,0.15); color: var(--red); }
+        .flow-text { font-size: 0.8rem; color: var(--text-muted); line-height: 1.5; }
+        .flow-text b { color: var(--text); }
+        .flow-arrow { text-align: center; color: var(--text-dim); font-size: 0.9rem; }
+        .flow-note { margin-top: 1.2rem; font-size: 0.78rem; color: var(--text-dim); text-align: center; }
+        .flow-note b { color: var(--orange); }
+
+        /* ── Feature Grid ── */
+        .feat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.8rem; margin: 1.5rem 0; }
+        .feat-card { background: rgba(30,41,59,0.5); border: 1px solid var(--border); border-radius: 12px; padding: 1.2rem; display: flex; gap: 0.8rem; align-items: flex-start; }
+        .feat-card .feat-icon { font-size: 1.4rem; flex-shrink: 0; }
+        .feat-card h4 { font-size: 0.88rem; font-weight: 700; margin-bottom: 0.2rem; }
+        .feat-card p { font-size: 0.8rem; color: var(--text-dim); line-height: 1.5; margin: 0; }
+
+        /* ── Comparison Table ── */
+        .table-wrap { border-radius: 12px; overflow: hidden; margin: 1.5rem 0; border: 1px solid var(--border); }
+        .compare-table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+        .compare-table th { background: var(--bg-card); color: var(--text-muted); padding: 0.8rem 1rem; text-align: left; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; font-size: 0.68rem; border-bottom: 2px solid var(--border); }
+        .compare-table td { padding: 0.7rem 1rem; border-bottom: 1px solid rgba(51,65,85,0.5); color: var(--text-muted); }
+        .compare-table tr:nth-child(even) td { background: rgba(15,23,42,0.3); }
+        .compare-table tr:last-child td { border-bottom: none; }
+        .y { color: var(--green); font-weight: 700; }
+        .n { color: #fca5a5; font-weight: 700; }
+        .m { color: var(--orange); font-weight: 700; }
+
+        /* ── Analogy Box ── */
+        .analogy { background: rgba(245,158,11,0.05); border: 1px solid rgba(245,158,11,0.12); border-radius: 10px; padding: 1rem 1.2rem; margin: 1rem 0; font-size: 0.82rem; color: var(--text-muted); line-height: 1.6; }
+        .analogy b { color: #fcd34d; }
+
+        /* ── Cloudflare Box ── */
+        .cf-box { background: linear-gradient(135deg, rgba(245,158,11,0.06), rgba(245,158,11,0.02)); border: 1px solid rgba(245,158,11,0.15); border-radius: 14px; padding: 1.5rem; margin: 1.5rem 0; }
+        .cf-box .cf-header { display: flex; align-items: center; gap: 0.6rem; margin-bottom: 1rem; }
+        .cf-box .cf-logo { font-size: 1.3rem; }
+        .cf-box .cf-title { font-size: 0.9rem; font-weight: 800; color: #fcd34d; }
+        .cf-box .cf-subtitle { font-size: 0.7rem; color: var(--text-dim); }
+        .cf-box p { font-size: 0.82rem; color: var(--text-muted); line-height: 1.7; margin-bottom: 0.8rem; }
+        .cf-box p b { color: var(--text); }
+
+        /* ── Interview Box ── */
+        .interview-box { background: linear-gradient(135deg, rgba(245,158,11,0.06), rgba(239,68,68,0.04)); border: 1px solid rgba(245,158,11,0.15); border-radius: 14px; padding: 1.5rem; margin: 1.5rem 0; }
+        .interview-box .q { font-size: 0.85rem; font-weight: 700; color: var(--text); margin-bottom: 0.5rem; padding-left: 1rem; border-left: 3px solid var(--orange); }
+        .interview-box .a { font-size: 0.82rem; color: var(--text-muted); line-height: 1.7; margin-top: 0.8rem; padding-left: 1rem; border-left: 3px solid var(--green); }
+        .interview-box .wrong { font-size: 0.82rem; color: var(--text-muted); line-height: 1.7; margin-top: 0.8rem; padding-left: 1rem; border-left: 3px solid var(--red); }
+        .interview-box .wrong b { color: #fca5a5; }
+        .interview-box .a b { color: #6ee7b7; }
+        .interview-box .label { font-size: 0.62rem; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 0.3rem; }
+        .interview-box .label.bad { color: var(--red); }
+        .interview-box .label.good { color: var(--green); }
+
+        /* ── Choice Cards ── */
+        .choice-section { display: flex; gap: 1rem; margin: 1.5rem 0; align-items: stretch; }
+        .choice-card { flex: 1; border-radius: 14px; padding: 1.5rem; position: relative; overflow: hidden; }
+        .choice-card::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px; }
+        .choice-card.good { background: rgba(16,185,129,0.04); border: 1px solid rgba(16,185,129,0.12); }
+        .choice-card.good::before { background: linear-gradient(90deg, transparent, var(--green), transparent); }
+        .choice-card.bad { background: rgba(239,68,68,0.04); border: 1px solid rgba(239,68,68,0.12); }
+        .choice-card.bad::before { background: linear-gradient(90deg, transparent, var(--red), transparent); }
+        .choice-card .card-icon { font-size: 1.8rem; margin-bottom: 0.8rem; }
+        .choice-card h3 { font-size: 1.1rem; font-weight: 700; margin-bottom: 0.4rem; }
+        .choice-card.good h3 { color: #6ee7b7; }
+        .choice-card.bad h3 { color: #fca5a5; }
+        .choice-card p { font-size: 0.82rem; color: var(--text-muted); line-height: 1.6; }
+        .choice-card ul { list-style: none; margin-top: 0.6rem; }
+        .choice-card ul li { font-size: 0.8rem; color: var(--text-muted); padding: 0.25rem 0; }
+        .choice-card ul li b { color: var(--text); }
+        .choice-divider { display: flex; align-items: center; justify-content: center; min-width: 40px; }
+        .choice-badge { background: linear-gradient(135deg, var(--orange), var(--red)); color: white; font-size: 0.75rem; font-weight: 800; width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; box-shadow: 0 0 20px rgba(245,158,11,0.3); }
+
+        /* ── Algo Cards ── */
+        .algo-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 14px; padding: 1.5rem; margin: 1.2rem 0; position: relative; overflow: hidden; }
+        .algo-card::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px; }
+        .algo-card.token::before { background: linear-gradient(90deg, var(--orange), var(--amber)); }
+        .algo-card.leaky::before { background: linear-gradient(90deg, var(--blue), var(--cyan)); }
+        .algo-card.fixed::before { background: linear-gradient(90deg, var(--purple), var(--pink)); }
+        .algo-card.sliding::before { background: linear-gradient(90deg, var(--green), var(--cyan)); }
+        .algo-card .algo-header { display: flex; align-items: center; gap: 0.8rem; margin-bottom: 0.8rem; }
+        .algo-card .algo-icon { font-size: 1.5rem; }
+        .algo-card .algo-name { font-size: 1.1rem; font-weight: 800; }
+        .algo-card .algo-used { font-size: 0.68rem; color: var(--text-dim); font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
+        .algo-card .algo-body { font-size: 0.85rem; color: var(--text-muted); line-height: 1.7; }
+        .algo-card .algo-body b { color: var(--text); }
+        .algo-card .algo-pros-cons { display: flex; gap: 1rem; margin-top: 1rem; }
+        .algo-card .algo-pro, .algo-card .algo-con { flex: 1; font-size: 0.78rem; }
+        .algo-card .algo-pro .label { color: var(--green); font-weight: 700; font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 0.3rem; }
+        .algo-card .algo-con .label { color: var(--red); font-weight: 700; font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 0.3rem; }
+        .algo-card .algo-pro p, .algo-card .algo-con p { color: var(--text-dim); line-height: 1.5; margin: 0; }
+
+        /* ── Takeaways ── */
+        .takeaways { display: flex; gap: 1rem; margin: 1.5rem 0; }
+        .tk { flex: 1; background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; padding: 1.3rem; position: relative; overflow: hidden; }
+        .tk::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px; }
+        .tk:nth-child(1)::before { background: linear-gradient(90deg, var(--orange), var(--red)); }
+        .tk:nth-child(2)::before { background: linear-gradient(90deg, var(--blue), var(--purple)); }
+        .tk:nth-child(3)::before { background: linear-gradient(90deg, var(--green), var(--cyan)); }
+        .tk:nth-child(4)::before { background: linear-gradient(90deg, var(--purple), var(--pink)); }
+        .tk .tk-icon { font-size: 1.3rem; margin-bottom: 0.5rem; }
+        .tk h4 { font-size: 0.9rem; font-weight: 700; margin-bottom: 0.3rem; }
+        .tk p { font-size: 0.8rem; color: var(--text-dim); line-height: 1.6; }
+
+        /* ===== FOOTER ===== */
+        footer { border-top: 1px solid var(--border); padding: 3rem 2rem; text-align: center; }
+        footer p { color: var(--text-dim); font-size: 0.85rem; }
+        footer .gradient-line { width: 100px; height: 3px; background: linear-gradient(90deg, var(--orange), var(--red), var(--pink)); margin: 0 auto 1.5rem; border-radius: 2px; }
+        .nav-btn { display: inline-flex; align-items: center; gap: 0.5rem; padding: 0.7rem 1.5rem; background: linear-gradient(135deg, var(--orange), var(--red)); color: white; border: none; border-radius: 10px; font-size: 0.9rem; font-weight: 600; cursor: pointer; text-decoration: none; transition: all 0.3s; margin-top: 1rem; }
+        .nav-btn:hover { transform: translateY(-2px); box-shadow: 0 8px 30px rgba(245,158,11,0.3); }
+
+        @media (max-width: 768px) {
+            .sidebar { display: none; }
+            .nav-center { display: none; }
+            .choice-section { flex-direction: column; }
+            .choice-divider { min-width: 0; padding: 0.5rem 0; }
+            .feat-grid { grid-template-columns: 1fr; }
+            .takeaways { flex-direction: column; }
+            .stats-row { flex-wrap: wrap; }
+            .stat-pill { min-width: calc(50% - 0.5rem); }
+            .algo-card .algo-pros-cons { flex-direction: column; }
+        }
+
+        @page { margin: 0; }
+    </style>
+</head>
+<body>
+
+    <nav>
+        <div class="nav-inner">
+            <div class="nav-left">
+                <a href="index.html" class="nav-logo"><div class="nav-logo-icon">SD</div><span>System Design for Dummies</span></a>
+                <div class="nav-sep"></div>
+                <div class="nav-chapter-badge"><div class="dot"></div>Chapter 8</div>
+            </div>
+            <div class="nav-center">
+                <a href="index.html">Home</a>
+                <a href="chapter5.html">Ch 5</a>
+                <a href="chapter6.html">Ch 6</a>
+                <a href="chapter7.html">Ch 7</a>
+            </div>
+            <div class="nav-right"><span class="nav-counter">8 sections</span></div>
+        </div>
+    </nav>
+
+    <div class="sidebar" id="sidebar">
+        <a href="#hero"><span class="tooltip">Intro</span></a>
+        <a href="#the-incident"><span class="tooltip">The Incident</span></a>
+        <a href="#why-rate-limit"><span class="tooltip">Why Rate Limit</span></a>
+        <a href="#algorithms"><span class="tooltip">Algorithms</span></a>
+        <a href="#comparison"><span class="tooltip">Comparison</span></a>
+        <a href="#distributed"><span class="tooltip">Distributed</span></a>
+        <a href="#where-to-place"><span class="tooltip">Where to Place</span></a>
+        <a href="#interview"><span class="tooltip">Interview</span></a>
+        <a href="#takeaways"><span class="tooltip">Takeaways</span></a>
+    </div>
+
+    <!-- Hero -->
+    <section class="chapter-hero" id="hero">
+        <div class="chapter-hero-bg"></div>
+        <div class="chapter-hero-content">
+            <div class="chapter-label"><div class="ch-dot"></div>Chapter 08 &mdash; Deep Dive</div>
+            <h1><span class="gradient">Rate Limiting</span><br>The Bouncer Your API Needs</h1>
+            <p>Your API has no rate limiter. One script, one angry user, 10,000 requests per second. Your database melts. Every other user gets timeouts. One missing feature. Entire platform down.</p>
+            <div class="chapter-tags">
+                <span class="chapter-tag" style="background: rgba(245,158,11,0.1); color: var(--orange); border: 1px solid rgba(245,158,11,0.2);">Token Bucket</span>
+                <span class="chapter-tag" style="background: rgba(59,130,246,0.1); color: var(--blue); border: 1px solid rgba(59,130,246,0.2);">Leaky Bucket</span>
+                <span class="chapter-tag" style="background: rgba(139,92,246,0.1); color: var(--purple); border: 1px solid rgba(139,92,246,0.2);">Fixed Window</span>
+                <span class="chapter-tag" style="background: rgba(16,185,129,0.1); color: var(--green); border: 1px solid rgba(16,185,129,0.2);">Sliding Window</span>
+            </div>
+        </div>
+    </section>
+
+    <div class="content-section">
+
+        <!-- 1: THE INCIDENT -->
+        <div class="section-block" id="the-incident">
+            <div class="section-card">
+                <div class="section-header">
+                    <div class="section-icon" style="background: linear-gradient(135deg, var(--orange), var(--red));">&#9889;</div>
+                    <div class="section-header-text">
+                        <h2>The Cloudflare Incident</h2>
+                        <div class="subtitle">When the company that sells rate limiting forgot to rate limit itself.</div>
+                    </div>
+                </div>
+                <div class="section-body">
+                    <div class="cf-box">
+                        <div class="cf-header">
+                            <div class="cf-logo">&#9729;</div>
+                            <div>
+                                <div class="cf-title">Cloudflare Dashboard Outage</div>
+                                <div class="cf-subtitle">September 12, 2025 &mdash; ~2 hours of downtime</div>
+                            </div>
+                        </div>
+                        <p>Cloudflare's dashboard went down for approximately 2 hours. Not from a DDoS attack. Not from a hacker. From <b>their own frontend code</b>.</p>
+                        <p>A developer added an object to a React <code style="font-family: 'JetBrains Mono', monospace; font-size: 0.78rem; color: var(--orange);">useEffect</code> dependency array. React saw a "new" object on every render (because objects are compared by reference, not value). The effect re-ran. Each run called the <b>Tenant Service API</b>. Each response triggered a re-render. Each re-render triggered another call.</p>
+                        <p>One dashboard tab = <b>hundreds of API calls per second</b>.</p>
+                    </div>
+
+                    <div class="stats-row">
+                        <div class="stat-pill"><div class="icon">&#128187;</div><div class="val">1000s</div><div class="lbl">Engineers Online</div></div>
+                        <div class="stat-pill"><div class="icon">&#128165;</div><div class="val">&#8734;</div><div class="lbl">Requests/Tab</div></div>
+                        <div class="stat-pill"><div class="icon">&#9200;</div><div class="val">~2h</div><div class="lbl">Downtime</div></div>
+                        <div class="stat-pill"><div class="icon">&#128295;</div><div class="val">1</div><div class="lbl">Rate Limit Added</div></div>
+                    </div>
+
+                    <p>Thousands of engineers had the dashboard open. Millions of requests hit one internal API. It buckled. The dashboard became inaccessible.</p>
+                    <p><b>The fix?</b> Add a global rate limit on the Tenant Service API.</p>
+                    <p><b>The lesson:</b> Rate limiting isn't just for external users. Your own code can be your worst attacker. If you don't rate limit internally, your system will eventually rate limit itself &mdash; by failing.</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- 2: WHY RATE LIMIT -->
+        <div class="section-block" id="why-rate-limit">
+            <div class="section-card">
+                <div class="section-header">
+                    <div class="section-icon" style="background: linear-gradient(135deg, var(--blue), var(--purple));">&#128737;</div>
+                    <div class="section-header-text">
+                        <h2>Why Rate Limiting Matters</h2>
+                        <div class="subtitle">It's not just about blocking bad actors. It's about protecting the entire system.</div>
+                    </div>
+                </div>
+                <div class="section-body">
+                    <div class="feat-grid">
+                        <div class="feat-card">
+                            <div class="feat-icon">&#128165;</div>
+                            <div>
+                                <h4>Prevent Resource Exhaustion</h4>
+                                <p>One user sending 10,000 requests/second can exhaust database connections, CPU, and memory &mdash; affecting every other user on the platform.</p>
+                            </div>
+                        </div>
+                        <div class="feat-card">
+                            <div class="feat-icon">&#128176;</div>
+                            <div>
+                                <h4>Control Costs</h4>
+                                <p>Every API call costs compute. Uncontrolled usage = unpredictable cloud bills. Rate limiting puts a ceiling on cost per user.</p>
+                            </div>
+                        </div>
+                        <div class="feat-card">
+                            <div class="feat-icon">&#128274;</div>
+                            <div>
+                                <h4>Mitigate Abuse</h4>
+                                <p>Brute-force login attempts, credential stuffing, scraping &mdash; all rely on high request volume. Rate limiting makes these attacks impractical.</p>
+                            </div>
+                        </div>
+                        <div class="feat-card">
+                            <div class="feat-icon">&#9878;</div>
+                            <div>
+                                <h4>Fair Usage</h4>
+                                <p>Without limits, one power user can monopolize shared resources. Rate limiting ensures equitable access across all users.</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="analogy"><b>The bouncer analogy:</b> A rate limiter is the bouncer at the door of a nightclub. It doesn't check if you belong. It checks if you're coming in too fast. One person entering every few seconds? Fine. 50 people rushing the door at once? Line up or go home.</div>
+
+                    <p><b>What the user sees:</b> HTTP status <code style="font-family: 'JetBrains Mono', monospace; font-size: 0.82rem; color: var(--orange);">429 Too Many Requests</code>. Usually accompanied by a <code style="font-family: 'JetBrains Mono', monospace; font-size: 0.82rem; color: var(--orange);">Retry-After</code> header telling the client when to try again.</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- 3: ALGORITHMS -->
+        <div class="section-block" id="algorithms">
+            <div class="section-card">
+                <div class="section-header">
+                    <div class="section-icon" style="background: linear-gradient(135deg, var(--orange), var(--amber));">&#9881;</div>
+                    <div class="section-header-text">
+                        <h2>The Four Algorithms</h2>
+                        <div class="subtitle">Each one answers the same question differently: "How do we say no &mdash; without saying no too late?"</div>
+                    </div>
+                </div>
+                <div class="section-body">
+
+                    <!-- Token Bucket -->
+                    <div class="algo-card token">
+                        <div class="algo-header">
+                            <div class="algo-icon">&#127946;</div>
+                            <div>
+                                <div class="algo-name">Token Bucket</div>
+                                <div class="algo-used">Used by AWS API Gateway, Stripe, GitHub API</div>
+                            </div>
+                        </div>
+                        <div class="algo-body">
+                            <p>Imagine a bucket that holds tokens. Tokens are added at a fixed rate (e.g., 10 tokens per second). Each request costs one token. If the bucket has tokens, the request goes through and a token is removed. If the bucket is empty, the request is <b>rejected</b>.</p>
+                            <p>The bucket has a <b>maximum capacity</b>. Tokens accumulate when traffic is low, up to the bucket size. This allows <b>controlled bursts</b> &mdash; a user who was idle for a while can send a burst of requests up to the bucket capacity, then must slow down to the refill rate.</p>
+                        </div>
+                        <div class="algo-pros-cons">
+                            <div class="algo-pro"><div class="label">Strengths</div><p>Allows controlled bursts. Memory efficient (just two numbers: tokens + timestamp). Simple to implement. Most popular algorithm in production.</p></div>
+                            <div class="algo-con"><div class="label">Tradeoffs</div><p>Two parameters to tune (bucket size + refill rate). Getting the burst size right requires understanding your traffic patterns.</p></div>
+                        </div>
+                    </div>
+
+                    <!-- Leaky Bucket -->
+                    <div class="algo-card leaky">
+                        <div class="algo-header">
+                            <div class="algo-icon">&#128167;</div>
+                            <div>
+                                <div class="algo-name">Leaky Bucket</div>
+                                <div class="algo-used">Used by Shopify, NGINX</div>
+                            </div>
+                        </div>
+                        <div class="algo-body">
+                            <p>Imagine a bucket with a hole at the bottom. Requests pour in from the top. They drain out (get processed) at a <b>constant rate</b> through the hole. If the bucket overflows (too many requests queued), new requests are <b>dropped</b>.</p>
+                            <p>Unlike token bucket, leaky bucket <b>doesn't allow bursts</b>. It smooths traffic into a perfectly uniform output rate. 1000 requests arrive at once? They're processed one by one at the drain rate. The rest wait in the queue.</p>
+                        </div>
+                        <div class="algo-pros-cons">
+                            <div class="algo-pro"><div class="label">Strengths</div><p>Perfectly smooth output. Protects downstream systems from spikes. Great for payment processing, checkout flows.</p></div>
+                            <div class="algo-con"><div class="label">Tradeoffs</div><p>No burst tolerance. A legitimate traffic spike is treated the same as an attack. Queued requests add latency.</p></div>
+                        </div>
+                    </div>
+
+                    <!-- Fixed Window -->
+                    <div class="algo-card fixed">
+                        <div class="algo-header">
+                            <div class="algo-icon">&#128338;</div>
+                            <div>
+                                <div class="algo-name">Fixed Window Counter</div>
+                                <div class="algo-used">Common in simple APIs, internal services</div>
+                            </div>
+                        </div>
+                        <div class="algo-body">
+                            <p>Divide time into fixed windows (e.g., 1-minute intervals). Each window has a counter. Every request increments the counter. When the counter hits the limit, reject until the next window starts.</p>
+                            <p><b>The boundary problem:</b> If the limit is 100 requests/minute, a user can send 100 requests at <code style="font-family: 'JetBrains Mono', monospace; font-size: 0.78rem; color: var(--purple);">11:59:59</code> and 100 more at <code style="font-family: 'JetBrains Mono', monospace; font-size: 0.78rem; color: var(--purple);">12:00:00</code> &mdash; that's 200 requests in 2 seconds, while technically staying within the "100 per minute" limit in each window.</p>
+                        </div>
+                        <div class="algo-pros-cons">
+                            <div class="algo-pro"><div class="label">Strengths</div><p>Dead simple. One counter per user per window. Minimal memory. Easy to implement with Redis INCR + EXPIRE.</p></div>
+                            <div class="algo-con"><div class="label">Tradeoffs</div><p>Boundary burst problem lets users effectively double their limit. Not suitable when strict enforcement matters.</p></div>
+                        </div>
+                    </div>
+
+                    <!-- Sliding Window -->
+                    <div class="algo-card sliding">
+                        <div class="algo-header">
+                            <div class="algo-icon">&#128200;</div>
+                            <div>
+                                <div class="algo-name">Sliding Window</div>
+                                <div class="algo-used">Used when precision matters</div>
+                            </div>
+                        </div>
+                        <div class="algo-body">
+                            <p><b>Sliding Window Log:</b> Store the timestamp of every request. To check the limit, count all timestamps within the last window (e.g., last 60 seconds). Most accurate &mdash; but stores a timestamp per request. At high volume, that's a lot of memory.</p>
+                            <p><b>Sliding Window Counter (optimized):</b> Combine two fixed windows with a weighted average. If we're 30 seconds into the current minute, the effective count = (current window count) + (previous window count &times; 0.5). No timestamp storage needed. Good accuracy with minimal memory.</p>
+                        </div>
+                        <div class="algo-pros-cons">
+                            <div class="algo-pro"><div class="label">Strengths</div><p>No boundary burst problem. Accurate rate enforcement. The counter variant gives near-exact results with minimal memory.</p></div>
+                            <div class="algo-con"><div class="label">Tradeoffs</div><p>Log variant is memory-heavy. Counter variant is approximate (but close enough for most use cases).</p></div>
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+        </div>
+
+        <!-- 4: COMPARISON -->
+        <div class="section-block" id="comparison">
+            <div class="section-card">
+                <div class="section-header">
+                    <div class="section-icon" style="background: linear-gradient(135deg, var(--purple), var(--pink));">&#128202;</div>
+                    <div class="section-header-text">
+                        <h2>Algorithm Comparison</h2>
+                        <div class="subtitle">When to use which.</div>
+                    </div>
+                </div>
+                <div class="section-body">
+                    <div class="table-wrap">
+                        <table class="compare-table">
+                            <tr><th>Algorithm</th><th>Burst Handling</th><th>Accuracy</th><th>Memory</th><th>Complexity</th><th>Best For</th></tr>
+                            <tr><td><b>Token Bucket</b></td><td class="y">Allows bursts</td><td class="y">Good</td><td class="y">Very low</td><td class="y">Simple</td><td>APIs, general purpose</td></tr>
+                            <tr><td><b>Leaky Bucket</b></td><td class="n">No bursts</td><td class="y">Good</td><td class="y">Low</td><td class="y">Simple</td><td>Payment processing, smooth traffic</td></tr>
+                            <tr><td><b>Fixed Window</b></td><td class="n">Boundary exploit</td><td class="m">Approximate</td><td class="y">Very low</td><td class="y">Simplest</td><td>Internal APIs, low stakes</td></tr>
+                            <tr><td><b>Sliding Window Log</b></td><td class="y">Precise</td><td class="y">Exact</td><td class="n">High</td><td class="m">Moderate</td><td>Strict enforcement</td></tr>
+                            <tr><td><b>Sliding Window Counter</b></td><td class="y">Near-precise</td><td class="y">Near-exact</td><td class="y">Low</td><td class="m">Moderate</td><td>Best accuracy/memory tradeoff</td></tr>
+                        </table>
+                    </div>
+
+                    <p><b>Rule of thumb:</b></p>
+                    <p>Token Bucket &rarr; when you need <b>controlled bursts</b> (most APIs)<br>
+                    Leaky Bucket &rarr; when you need <b>smooth, constant throughput</b> (payments, checkout)<br>
+                    Fixed Window &rarr; when you need <b>simplicity above all</b> (internal tools)<br>
+                    Sliding Window &rarr; when you need <b>precision</b> (strict compliance, billing APIs)</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- 5: DISTRIBUTED RATE LIMITING -->
+        <div class="section-block" id="distributed">
+            <div class="section-card">
+                <div class="section-header">
+                    <div class="section-icon" style="background: linear-gradient(135deg, var(--red), var(--orange));">&#127760;</div>
+                    <div class="section-header-text">
+                        <h2>The Distributed Problem</h2>
+                        <div class="subtitle">One algorithm on one server is easy. The real challenge: multiple servers, shared state, race conditions.</div>
+                    </div>
+                </div>
+                <div class="section-body">
+                    <div class="incident-hero">
+                        <p style="color: var(--text-muted); font-size: 0.95rem;">You have 5 API servers. User limit: 100 requests/minute.</p>
+                        <div class="big-number">500 requests get through</div>
+                        <p style="color: var(--text-muted); font-size: 0.95rem;">Each server has its own counter. Each allows 100. The user sends 100 to each server. 5 &times; 100 = 500.</p>
+                    </div>
+
+                    <p>This is the <b>distributed rate limiting problem</b>. Local counters don't work when requests are load-balanced across multiple servers.</p>
+
+                    <p><b>Solution 1: Centralized Counter (Redis)</b></p>
+                    <p>Every server checks and increments a shared counter in Redis before processing the request. Redis's <code style="font-family: 'JetBrains Mono', monospace; font-size: 0.82rem; color: var(--orange);">INCR</code> command is atomic &mdash; no race conditions. Combined with <code style="font-family: 'JetBrains Mono', monospace; font-size: 0.82rem; color: var(--orange);">EXPIRE</code>, you get a complete fixed-window rate limiter in two commands.</p>
+
+                    <div class="analogy"><b>Tradeoff:</b> Every request now requires a Redis round-trip. At high throughput, Redis becomes the bottleneck. If Redis goes down, you either fail open (allow all traffic) or fail closed (block everything). Both are risky.</div>
+
+                    <p><b>Solution 2: Local + Sync</b></p>
+                    <p>Each server maintains a local counter and periodically syncs with a central store. Faster (no per-request network call) but less accurate &mdash; you might temporarily exceed the limit between sync intervals.</p>
+
+                    <p><b>Solution 3: Sticky Sessions</b></p>
+                    <p>Route all requests from the same user to the same server (via consistent hashing on user ID). Each server only needs a local counter for its users. No shared state needed. Tradeoff: uneven load distribution and loss of counter if the server goes down.</p>
+
+                    <div class="table-wrap">
+                        <table class="compare-table">
+                            <tr><th>Approach</th><th>Accuracy</th><th>Latency</th><th>Failure Mode</th></tr>
+                            <tr><td><b>Centralized (Redis)</b></td><td class="y">Exact</td><td class="m">+1 network hop</td><td class="n">Redis down = no limiting</td></tr>
+                            <tr><td><b>Local + Sync</b></td><td class="m">Approximate</td><td class="y">No added latency</td><td class="y">Graceful degradation</td></tr>
+                            <tr><td><b>Sticky Sessions</b></td><td class="y">Exact (per server)</td><td class="y">No added latency</td><td class="m">Counter lost on server failure</td></tr>
+                        </table>
+                    </div>
+
+                    <p><b>Production reality:</b> Most systems use Redis-based rate limiting with circuit breakers. If Redis is unreachable, fail open for a short window rather than blocking all traffic. Stripe, GitHub, and Discord all use this pattern.</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- 6: WHERE TO PLACE -->
+        <div class="section-block" id="where-to-place">
+            <div class="section-card">
+                <div class="section-header">
+                    <div class="section-icon" style="background: linear-gradient(135deg, var(--cyan), var(--blue));">&#128205;</div>
+                    <div class="section-header-text">
+                        <h2>Where to Place Rate Limiting</h2>
+                        <div class="subtitle">The earlier you reject, the less work your system does.</div>
+                    </div>
+                </div>
+                <div class="section-body">
+                    <div class="flow-visual">
+                        <div class="title">Request Path</div>
+                        <div class="flow-steps">
+                            <div class="flow-step write"><div class="flow-num">1</div><div class="flow-text"><b>CDN / Edge</b> &mdash; Cloudflare, Akamai. Block at the network edge before requests even reach your infrastructure. Cheapest place to reject.</div></div>
+                            <div class="flow-arrow">&#8595;</div>
+                            <div class="flow-step flush"><div class="flow-num">2</div><div class="flow-text"><b>API Gateway</b> &mdash; Kong, AWS API Gateway. Centralized rate limiting across all services. Most common placement.</div></div>
+                            <div class="flow-arrow">&#8595;</div>
+                            <div class="flow-step apply"><div class="flow-num">3</div><div class="flow-text"><b>Load Balancer</b> &mdash; NGINX, HAProxy. Per-IP or per-route limiting before requests hit application servers.</div></div>
+                            <div class="flow-arrow">&#8595;</div>
+                            <div class="flow-step checkpoint"><div class="flow-num">4</div><div class="flow-text"><b>Application Layer</b> &mdash; Middleware in your service. Fine-grained, per-user, per-endpoint limits. Most flexible but most expensive (request already reached your code).</div></div>
+                        </div>
+                        <div class="flow-note"><b>Best practice:</b> Layer rate limiting. Coarse limits at the edge + fine-grained limits at the application layer. Defense in depth.</div>
+                    </div>
+
+                    <div class="analogy"><b>Think of it like airport security:</b> You don't wait until someone is on the plane to check their ticket. You verify at the gate, then security, then boarding. Each layer catches something the previous one might miss.</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 7: THE INTERVIEW -->
+        <div class="section-block" id="interview">
+            <div class="section-card">
+                <div class="section-header">
+                    <div class="section-icon" style="background: linear-gradient(135deg, var(--orange), var(--red));">&#128188;</div>
+                    <div class="section-header-text">
+                        <h2>The System Design Interview</h2>
+                        <div class="subtitle">"Design a rate limiter" &mdash; One of the most common system design questions.</div>
+                    </div>
+                </div>
+                <div class="section-body">
+                    <div class="interview-box">
+                        <div class="q">"Design a rate limiter for an API that handles 10,000 requests per second."</div>
+                        <div class="label bad">&#10008; THE REJECTED ANSWER</div>
+                        <div class="wrong">"I'll count requests per user and block them when they exceed the limit. <b>I'll use a database to store the counts.</b>"</div>
+                        <div style="margin-top: 0.5rem; font-size: 0.78rem; color: var(--text-dim);">Interviewer thinking: "A database query on every request at 10K RPS? That's creating the problem you're trying to solve."</div>
+                    </div>
+
+                    <div class="interview-box" style="margin-top: 1rem;">
+                        <div class="q">Same question. Better answer.</div>
+                        <div class="label good">&#10004; THE STAFF-LEVEL ANSWER</div>
+                        <div class="a">"I'd use a <b>token bucket algorithm</b> with Redis as the backing store. Each user gets a key in Redis with their token count and last refill timestamp. On each request, I atomically check and decrement using a Lua script to avoid race conditions. The API gateway enforces coarse per-IP limits, and the application layer enforces per-user, per-endpoint limits. If Redis goes down, I fail open with local in-memory counters as a fallback &mdash; slightly less accurate but the system stays available. I'd return <b>429 with Retry-After headers</b> and include <b>X-RateLimit-Remaining</b> headers so clients can self-throttle."</div>
+                    </div>
+
+                    <p><b>Key things interviewers look for:</b></p>
+                    <div class="feat-grid">
+                        <div class="feat-card">
+                            <div class="feat-icon">&#9881;</div>
+                            <div>
+                                <h4>Algorithm Choice + Why</h4>
+                                <p>Don't just name an algorithm. Explain why token bucket fits (allows bursts, low memory) vs. alternatives.</p>
+                            </div>
+                        </div>
+                        <div class="feat-card">
+                            <div class="feat-icon">&#127760;</div>
+                            <div>
+                                <h4>Distributed Awareness</h4>
+                                <p>Multiple servers = shared state problem. Mention Redis, race conditions, atomic operations.</p>
+                            </div>
+                        </div>
+                        <div class="feat-card">
+                            <div class="feat-icon">&#128165;</div>
+                            <div>
+                                <h4>Failure Handling</h4>
+                                <p>What happens when Redis goes down? Fail open or closed? This separates good from great answers.</p>
+                            </div>
+                        </div>
+                        <div class="feat-card">
+                            <div class="feat-icon">&#128203;</div>
+                            <div>
+                                <h4>Client Experience</h4>
+                                <p>Return proper headers (429, Retry-After, X-RateLimit-Remaining). Good APIs help clients behave well.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 8: TAKEAWAYS -->
+        <div class="section-block" id="takeaways">
+            <div class="section-card">
+                <div class="section-header">
+                    <div class="section-icon" style="background: linear-gradient(135deg, var(--green), var(--cyan));">&#127919;</div>
+                    <div class="section-header-text">
+                        <h2>Key Takeaways</h2>
+                        <div class="subtitle">What to remember about Rate Limiting</div>
+                    </div>
+                </div>
+                <div class="section-body">
+                    <div class="takeaways">
+                        <div class="tk"><div class="tk-icon">&#128737;</div><h4>Protect Everything</h4><p>Rate limit external APIs, internal services, and even your own frontend. Cloudflare's incident proves internal traffic can be just as dangerous.</p></div>
+                        <div class="tk"><div class="tk-icon">&#9881;</div><h4>Pick the Right Algorithm</h4><p>Token Bucket for bursts. Leaky Bucket for smooth traffic. Fixed Window for simplicity. Sliding Window for precision. No single algorithm fits all cases.</p></div>
+                        <div class="tk"><div class="tk-icon">&#127760;</div><h4>Distributed is Hard</h4><p>Local counters don't work across multiple servers. Use Redis for shared state, but plan for Redis failure with fallback strategies.</p></div>
+                        <div class="tk"><div class="tk-icon">&#128205;</div><h4>Layer Your Defense</h4><p>Coarse limits at the edge, fine-grained limits at the application. The earlier you reject, the less work your system does.</p></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <footer>
+        <div class="gradient-line"></div>
+        <p>System Design for Dummies &mdash; Chapter 8: Rate Limiting</p>
+        <div style="margin-top: 1.5rem; display: flex; gap: 1rem; justify-content: center;">
+            <a href="chapter7.html" class="nav-btn" style="background: var(--bg-card); border: 1px solid var(--border);">&larr; Ch 7: Write-Ahead Logging</a>
+            <a href="index.html" class="nav-btn">All Chapters</a>
+        </div>
+    </footer>
+
+    <script>
+        const blocks = document.querySelectorAll('.section-block');
+        const observer = new IntersectionObserver((entries) => {
+            entries.forEach(entry => { if (entry.isIntersecting) entry.target.classList.add('visible'); });
+        }, { threshold: 0.1 });
+        blocks.forEach(b => observer.observe(b));
+
+        const sidebarLinks = document.querySelectorAll('.sidebar a');
+        const sections = document.querySelectorAll('[id]');
+        window.addEventListener('scroll', () => {
+            let current = '';
+            sections.forEach(section => {
+                if (window.scrollY >= section.offsetTop - 200) current = section.getAttribute('id');
+            });
+            sidebarLinks.forEach(link => {
+                link.classList.remove('active');
+                if (link.getAttribute('href') === '#' + current) link.classList.add('active');
+            });
+        });
+    </script>
+
+    <script>
+        if (new URLSearchParams(window.location.search).has('print')) {
+            const s = document.createElement('style');
+            s.textContent = `
+                .section-block { opacity:1!important; transform:none!important; transition:none!important; }
+                nav, .sidebar { position:relative!important; }
+                .sidebar { display:none!important; }
+                nav { display:none!important; }
+                @media print {
+                    @page { margin: 0; }
+                    * { -webkit-print-color-adjust:exact!important; print-color-adjust:exact!important; }
+                    body { background: var(--bg)!important; margin: 0!important; }
+                    .chapter-hero { min-height: 100vh!important; display: flex!important; flex-direction: column!important; align-items: center!important; justify-content: center!important; padding: 2rem!important; page-break-after: always!important; }
+                    .section-block { page-break-before: always!important; page-break-inside: avoid!important; }
+                    .section-card { page-break-inside: avoid!important; }
+                    .choice-section, .feat-grid, .stats-row, .takeaways, .flow-visual, .interview-box, .table-wrap, .incident-hero, .analogy, .cf-box, .algo-card { page-break-inside: avoid!important; }
+                    footer { page-break-before: always!important; }
+                    .content-section { padding: 0 2rem!important; }
+                }
+            `;
+            document.head.appendChild(s);
+            document.querySelectorAll('.section-block').forEach(el => {
+                el.style.setProperty('opacity','1','important');
+                el.style.setProperty('transform','none','important');
+                el.classList.add('visible');
+            });
+            window.addEventListener('load', () => setTimeout(() => window.print(), 500));
+        }
+    </script>
+
+</body>
+</html>
