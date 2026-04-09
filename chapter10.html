@@ -1,0 +1,667 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ch 10: Caching Strategies &mdash; System Design for Dummies</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧠</text></svg>">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap');
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        :root {
+            --bg: #0f172a; --bg-card: #1e293b; --bg-code: #0d1117;
+            --text: #f8fafc; --text-muted: #94a3b8; --text-dim: #64748b;
+            --border: #334155; --blue: #3b82f6; --green: #10b981;
+            --orange: #f59e0b; --purple: #8b5cf6; --pink: #ec4899;
+            --red: #ef4444; --cyan: #06b6d4; --indigo: #6366f1;
+            --sky: #38bdf8;
+        }
+        html { scroll-behavior: smooth; scrollbar-width: thin; scrollbar-color: var(--border) var(--bg); }
+        body { font-family: 'Inter', -apple-system, sans-serif; background: var(--bg); color: var(--text); line-height: 1.6; overflow-x: hidden; }
+
+        /* ===== NAV ===== */
+        nav { position: fixed; top: 0; left: 0; right: 0; z-index: 100; background: rgba(15,23,42,0.85); backdrop-filter: blur(20px); border-bottom: 1px solid rgba(51,65,85,0.5); }
+        .nav-inner { max-width: 1100px; margin: 0 auto; padding: 0.65rem 2rem; display: flex; align-items: center; justify-content: space-between; }
+        .nav-left { display: flex; align-items: center; gap: 1rem; }
+        .nav-logo { display: flex; align-items: center; gap: 0.6rem; font-weight: 800; font-size: 0.95rem; text-decoration: none; color: var(--text); letter-spacing: -0.5px; }
+        .nav-logo-icon { width: 28px; height: 28px; border-radius: 7px; background: linear-gradient(135deg, var(--blue), var(--purple)); display: flex; align-items: center; justify-content: center; font-size: 0.65rem; font-weight: 900; color: white; }
+        .nav-logo span { background: linear-gradient(135deg, var(--blue), var(--purple)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        .nav-sep { width: 1px; height: 18px; background: var(--border); }
+        .nav-chapter-badge { display: flex; align-items: center; gap: 0.4rem; font-size: 0.72rem; font-weight: 600; color: var(--sky); background: rgba(56,189,248,0.08); border: 1px solid rgba(56,189,248,0.15); padding: 0.2rem 0.7rem; border-radius: 50px; }
+        .nav-chapter-badge .dot { width: 5px; height: 5px; border-radius: 50%; background: var(--sky); }
+        .nav-center { display: flex; gap: 0.25rem; }
+        .nav-center a { color: var(--text-muted); text-decoration: none; font-size: 0.78rem; font-weight: 500; padding: 0.35rem 0.7rem; border-radius: 6px; transition: all 0.2s; }
+        .nav-center a:hover { color: var(--text); background: rgba(56,189,248,0.1); }
+        .nav-right { display: flex; align-items: center; }
+        .nav-counter { font-family: 'JetBrains Mono', monospace; font-size: 0.72rem; color: var(--text-dim); background: var(--bg-card); padding: 0.25rem 0.6rem; border-radius: 20px; border: 1px solid var(--border); }
+
+        /* ===== SIDEBAR ===== */
+        .sidebar { position: fixed; left: 1.2rem; top: 50%; transform: translateY(-50%); z-index: 50; display: flex; flex-direction: column; gap: 4px; }
+        .sidebar a { width: 8px; height: 8px; border-radius: 50%; background: var(--border); transition: all 0.3s; display: block; position: relative; }
+        .sidebar a:hover { background: var(--text-muted); transform: scale(1.5); }
+        .sidebar a.active { background: var(--sky); box-shadow: 0 0 8px rgba(56,189,248,0.5); transform: scale(1.5); }
+        .sidebar a .tooltip { position: absolute; left: 18px; top: 50%; transform: translateY(-50%); background: var(--bg-card); color: var(--text); padding: 0.3rem 0.7rem; border-radius: 6px; font-size: 0.65rem; white-space: nowrap; opacity: 0; pointer-events: none; transition: opacity 0.2s; border: 1px solid var(--border); }
+        .sidebar a:hover .tooltip { opacity: 1; }
+
+        /* ===== HERO ===== */
+        .chapter-hero { padding: 8rem 2rem 4rem; text-align: center; position: relative; overflow: hidden; }
+        .chapter-hero-bg { position: absolute; inset: 0; background: radial-gradient(ellipse at 30% 50%, rgba(56,189,248,0.1) 0%, transparent 60%), radial-gradient(ellipse at 70% 30%, rgba(59,130,246,0.08) 0%, transparent 50%); }
+        .chapter-hero-content { position: relative; max-width: 700px; margin: 0 auto; }
+        .chapter-label { display: inline-flex; align-items: center; gap: 0.5rem; font-size: 0.75rem; font-weight: 600; text-transform: uppercase; letter-spacing: 2px; color: var(--sky); margin-bottom: 1.2rem; }
+        .chapter-label .ch-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--sky); }
+        .chapter-hero h1 { font-size: clamp(2rem, 5vw, 3rem); font-weight: 900; letter-spacing: -1.5px; line-height: 1.15; margin-bottom: 0.8rem; }
+        .chapter-hero h1 .gradient { background: linear-gradient(135deg, var(--sky), var(--blue)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        .chapter-hero-content > p { color: var(--text-muted); font-size: 1.05rem; max-width: 520px; margin: 0 auto; line-height: 1.7; }
+        .chapter-tags { display: flex; justify-content: center; gap: 0.5rem; flex-wrap: wrap; margin-top: 1.8rem; }
+        .chapter-tag { padding: 0.3rem 0.85rem; border-radius: 50px; font-size: 0.7rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
+
+        /* ===== SECTIONS ===== */
+        .content-section { max-width: 900px; margin: 0 auto; padding: 2rem 2rem 4rem; }
+        .section-block { position: relative; margin-bottom: 4rem; opacity: 0; transform: translateY(30px); transition: all 0.6s cubic-bezier(0.16, 1, 0.3, 1); }
+        .section-block.visible { opacity: 1; transform: translateY(0); }
+        .section-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 16px; overflow: hidden; }
+        .section-header { padding: 1.5rem 2rem 1rem; display: flex; align-items: flex-start; gap: 1rem; }
+        .section-icon { width: 44px; height: 44px; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 1.2rem; flex-shrink: 0; }
+        .section-header-text h2 { font-size: 1.3rem; font-weight: 800; letter-spacing: -0.5px; margin-bottom: 0.2rem; }
+        .section-header-text .subtitle { font-size: 0.85rem; color: var(--text-muted); line-height: 1.6; }
+        .section-body { padding: 0.5rem 2rem 2rem; }
+        .section-body p { color: var(--text-muted); font-size: 0.92rem; line-height: 1.8; margin-bottom: 1.2rem; }
+        .section-body p b { color: var(--text); }
+
+        /* ── Incident Hero ── */
+        .incident-hero { background: linear-gradient(135deg, rgba(56,189,248,0.08), rgba(59,130,246,0.05)); border: 1px solid rgba(56,189,248,0.15); border-radius: 14px; padding: 2rem; text-align: center; margin-bottom: 1.5rem; }
+        .incident-hero .big-number { font-family: 'JetBrains Mono', monospace; font-size: 2.5rem; font-weight: 800; background: linear-gradient(135deg, var(--sky), var(--blue)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; margin: 0.8rem 0; line-height: 1.2; }
+        .stats-row { display: flex; gap: 1rem; margin: 1.5rem 0; }
+        .stat-pill { flex: 1; background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; padding: 1rem; text-align: center; }
+        .stat-pill .icon { font-size: 1.3rem; margin-bottom: 0.4rem; }
+        .stat-pill .val { font-family: 'JetBrains Mono', monospace; font-size: 1.3rem; font-weight: 800; background: linear-gradient(135deg, var(--sky), var(--blue)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        .stat-pill .lbl { font-size: 0.65rem; color: var(--text-dim); text-transform: uppercase; letter-spacing: 1px; margin-top: 0.2rem; }
+
+        /* ── Feature Grid ── */
+        .feat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.8rem; margin: 1.5rem 0; }
+        .feat-card { background: rgba(30,41,59,0.5); border: 1px solid var(--border); border-radius: 12px; padding: 1.2rem; display: flex; gap: 0.8rem; align-items: flex-start; }
+        .feat-card .feat-icon { font-size: 1.4rem; flex-shrink: 0; }
+        .feat-card h4 { font-size: 0.88rem; font-weight: 700; margin-bottom: 0.2rem; }
+        .feat-card p { font-size: 0.8rem; color: var(--text-dim); line-height: 1.5; margin: 0; }
+
+        /* ── Comparison Table ── */
+        .table-wrap { border-radius: 12px; overflow: hidden; margin: 1.5rem 0; border: 1px solid var(--border); }
+        .compare-table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+        .compare-table th { background: var(--bg-card); color: var(--text-muted); padding: 0.8rem 1rem; text-align: left; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; font-size: 0.68rem; border-bottom: 2px solid var(--border); }
+        .compare-table td { padding: 0.7rem 1rem; border-bottom: 1px solid rgba(51,65,85,0.5); color: var(--text-muted); }
+        .compare-table tr:nth-child(even) td { background: rgba(15,23,42,0.3); }
+        .compare-table tr:last-child td { border-bottom: none; }
+        .y { color: var(--green); font-weight: 700; }
+        .n { color: #fca5a5; font-weight: 700; }
+        .m { color: var(--orange); font-weight: 700; }
+
+        /* ── Analogy Box ── */
+        .analogy { background: rgba(56,189,248,0.05); border: 1px solid rgba(56,189,248,0.12); border-radius: 10px; padding: 1rem 1.2rem; margin: 1rem 0; font-size: 0.82rem; color: var(--text-muted); line-height: 1.6; }
+        .analogy b { color: #7dd3fc; }
+
+        /* ── Strategy Card ── */
+        .strat-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 14px; padding: 1.5rem; margin: 1.2rem 0; position: relative; overflow: hidden; }
+        .strat-card::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px; }
+        .strat-card.cache-aside::before { background: linear-gradient(90deg, var(--blue), var(--sky)); }
+        .strat-card.write-through::before { background: linear-gradient(90deg, var(--green), var(--cyan)); }
+        .strat-card.write-behind::before { background: linear-gradient(90deg, var(--orange), var(--red)); }
+        .strat-card.read-through::before { background: linear-gradient(90deg, var(--purple), var(--pink)); }
+        .strat-card .strat-header { display: flex; align-items: center; gap: 0.8rem; margin-bottom: 0.8rem; }
+        .strat-card .strat-icon { font-size: 1.5rem; }
+        .strat-card .strat-name { font-size: 1.1rem; font-weight: 800; }
+        .strat-card .strat-used { font-size: 0.68rem; color: var(--text-dim); font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
+        .strat-card .strat-body { font-size: 0.85rem; color: var(--text-muted); line-height: 1.7; }
+        .strat-card .strat-body b { color: var(--text); }
+        .strat-card .strat-flow { display: flex; align-items: center; gap: 0.5rem; margin: 1rem 0; padding: 0.8rem; background: var(--bg-code); border-radius: 8px; font-family: 'JetBrains Mono', monospace; font-size: 0.78rem; flex-wrap: wrap; }
+        .strat-card .strat-flow .node { padding: 0.3rem 0.6rem; border-radius: 6px; font-weight: 600; }
+        .strat-card .strat-flow .arrow { color: var(--text-dim); }
+        .strat-card .pros-cons { display: flex; gap: 1rem; margin-top: 1rem; }
+        .strat-card .pro, .strat-card .con { flex: 1; font-size: 0.78rem; }
+        .strat-card .pro .label { color: var(--green); font-weight: 700; font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 0.3rem; }
+        .strat-card .con .label { color: var(--red); font-weight: 700; font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 0.3rem; }
+        .strat-card .pro p, .strat-card .con p { color: var(--text-dim); line-height: 1.5; margin: 0; }
+
+        /* ── Choice Cards ── */
+        .choice-section { display: flex; gap: 1rem; margin: 1.5rem 0; align-items: stretch; }
+        .choice-card { flex: 1; border-radius: 14px; padding: 1.5rem; position: relative; overflow: hidden; }
+        .choice-card::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px; }
+        .choice-card.good { background: rgba(16,185,129,0.04); border: 1px solid rgba(16,185,129,0.12); }
+        .choice-card.good::before { background: linear-gradient(90deg, transparent, var(--green), transparent); }
+        .choice-card.bad { background: rgba(239,68,68,0.04); border: 1px solid rgba(239,68,68,0.12); }
+        .choice-card.bad::before { background: linear-gradient(90deg, transparent, var(--red), transparent); }
+        .choice-card .card-icon { font-size: 1.8rem; margin-bottom: 0.8rem; }
+        .choice-card h3 { font-size: 1.1rem; font-weight: 700; margin-bottom: 0.4rem; }
+        .choice-card.good h3 { color: #6ee7b7; }
+        .choice-card.bad h3 { color: #fca5a5; }
+        .choice-card p { font-size: 0.82rem; color: var(--text-muted); line-height: 1.6; }
+        .choice-card ul { list-style: none; margin-top: 0.6rem; }
+        .choice-card ul li { font-size: 0.8rem; color: var(--text-muted); padding: 0.25rem 0; }
+        .choice-card ul li b { color: var(--text); }
+        .choice-divider { display: flex; align-items: center; justify-content: center; min-width: 40px; }
+        .choice-badge { background: linear-gradient(135deg, var(--sky), var(--blue)); color: white; font-size: 0.75rem; font-weight: 800; width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; box-shadow: 0 0 20px rgba(56,189,248,0.3); }
+
+        /* ── Interview Box ── */
+        .interview-box { background: linear-gradient(135deg, rgba(56,189,248,0.06), rgba(59,130,246,0.04)); border: 1px solid rgba(56,189,248,0.15); border-radius: 14px; padding: 1.5rem; margin: 1.5rem 0; }
+        .interview-box .q { font-size: 0.85rem; font-weight: 700; color: var(--text); margin-bottom: 0.5rem; padding-left: 1rem; border-left: 3px solid var(--sky); }
+        .interview-box .a { font-size: 0.82rem; color: var(--text-muted); line-height: 1.7; margin-top: 0.8rem; padding-left: 1rem; border-left: 3px solid var(--green); }
+        .interview-box .wrong { font-size: 0.82rem; color: var(--text-muted); line-height: 1.7; margin-top: 0.8rem; padding-left: 1rem; border-left: 3px solid var(--red); }
+        .interview-box .wrong b { color: #fca5a5; }
+        .interview-box .a b { color: #6ee7b7; }
+        .interview-box .label { font-size: 0.62rem; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 0.3rem; }
+        .interview-box .label.bad { color: var(--red); }
+        .interview-box .label.good { color: var(--green); }
+
+        /* ── Takeaways ── */
+        .takeaways { display: flex; gap: 1rem; margin: 1.5rem 0; }
+        .tk { flex: 1; background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; padding: 1.3rem; position: relative; overflow: hidden; }
+        .tk::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px; }
+        .tk:nth-child(1)::before { background: linear-gradient(90deg, var(--sky), var(--blue)); }
+        .tk:nth-child(2)::before { background: linear-gradient(90deg, var(--green), var(--cyan)); }
+        .tk:nth-child(3)::before { background: linear-gradient(90deg, var(--orange), var(--red)); }
+        .tk:nth-child(4)::before { background: linear-gradient(90deg, var(--purple), var(--pink)); }
+        .tk .tk-icon { font-size: 1.3rem; margin-bottom: 0.5rem; }
+        .tk h4 { font-size: 0.9rem; font-weight: 700; margin-bottom: 0.3rem; }
+        .tk p { font-size: 0.8rem; color: var(--text-dim); line-height: 1.6; }
+
+        /* ===== FOOTER ===== */
+        footer { border-top: 1px solid var(--border); padding: 3rem 2rem; text-align: center; }
+        footer p { color: var(--text-dim); font-size: 0.85rem; }
+        footer .gradient-line { width: 100px; height: 3px; background: linear-gradient(90deg, var(--sky), var(--blue), var(--purple)); margin: 0 auto 1.5rem; border-radius: 2px; }
+        .nav-btn { display: inline-flex; align-items: center; gap: 0.5rem; padding: 0.7rem 1.5rem; background: linear-gradient(135deg, var(--sky), var(--blue)); color: white; border: none; border-radius: 10px; font-size: 0.9rem; font-weight: 600; cursor: pointer; text-decoration: none; transition: all 0.3s; margin-top: 1rem; }
+        .nav-btn:hover { transform: translateY(-2px); box-shadow: 0 8px 30px rgba(56,189,248,0.3); }
+
+        @media (max-width: 768px) {
+            .sidebar { display: none; }
+            .nav-center { display: none; }
+            .choice-section { flex-direction: column; }
+            .choice-divider { min-width: 0; padding: 0.5rem 0; }
+            .feat-grid { grid-template-columns: 1fr; }
+            .takeaways { flex-direction: column; }
+            .stats-row { flex-wrap: wrap; }
+            .stat-pill { min-width: calc(50% - 0.5rem); }
+            .strat-card .pros-cons { flex-direction: column; }
+        }
+
+        @page { margin: 0; }
+    </style>
+</head>
+<body>
+
+    <nav>
+        <div class="nav-inner">
+            <div class="nav-left">
+                <a href="index.html" class="nav-logo"><div class="nav-logo-icon">SD</div><span>System Design for Dummies</span></a>
+                <div class="nav-sep"></div>
+                <div class="nav-chapter-badge"><div class="dot"></div>Chapter 10</div>
+            </div>
+            <div class="nav-center">
+                <a href="index.html">Home</a>
+                <a href="chapter7.html">Ch 7</a>
+                <a href="chapter8.html">Ch 8</a>
+                <a href="chapter9.html">Ch 9</a>
+            </div>
+            <div class="nav-right"><span class="nav-counter">8 sections</span></div>
+        </div>
+    </nav>
+
+    <div class="sidebar" id="sidebar">
+        <a href="#hero"><span class="tooltip">Intro</span></a>
+        <a href="#the-incident"><span class="tooltip">The Incident</span></a>
+        <a href="#why-cache"><span class="tooltip">Why Cache</span></a>
+        <a href="#strategies"><span class="tooltip">4 Strategies</span></a>
+        <a href="#comparison"><span class="tooltip">Comparison</span></a>
+        <a href="#stampede"><span class="tooltip">Cache Stampede</span></a>
+        <a href="#distributed"><span class="tooltip">Distributed</span></a>
+        <a href="#interview"><span class="tooltip">Interview</span></a>
+        <a href="#takeaways"><span class="tooltip">Takeaways</span></a>
+    </div>
+
+    <!-- Hero -->
+    <section class="chapter-hero" id="hero">
+        <div class="chapter-hero-bg"></div>
+        <div class="chapter-hero-content">
+            <div class="chapter-label"><div class="ch-dot"></div>Chapter 10 &mdash; Deep Dive</div>
+            <h1><span class="gradient">Caching Strategies</span><br>The Art of Not Hitting Your Database</h1>
+            <p>A database query takes 5&ndash;50ms. A cache lookup takes 0.1ms. That's a 500x difference. Multiply by millions of requests and caching is the difference between fast and broken.</p>
+            <div class="chapter-tags">
+                <span class="chapter-tag" style="background: rgba(56,189,248,0.1); color: var(--sky); border: 1px solid rgba(56,189,248,0.2);">Cache-Aside</span>
+                <span class="chapter-tag" style="background: rgba(16,185,129,0.1); color: var(--green); border: 1px solid rgba(16,185,129,0.2);">Write-Through</span>
+                <span class="chapter-tag" style="background: rgba(245,158,11,0.1); color: var(--orange); border: 1px solid rgba(245,158,11,0.2);">Write-Behind</span>
+                <span class="chapter-tag" style="background: rgba(139,92,246,0.1); color: var(--purple); border: 1px solid rgba(139,92,246,0.2);">Read-Through</span>
+            </div>
+        </div>
+    </section>
+
+    <div class="content-section">
+
+        <!-- 1: THE INCIDENT -->
+        <div class="section-block" id="the-incident">
+            <div class="section-card">
+                <div class="section-header">
+                    <div class="section-icon" style="background: linear-gradient(135deg, var(--red), var(--orange));">&#9889;</div>
+                    <div class="section-header-text">
+                        <h2>The Shopify Black Friday Incident</h2>
+                        <div class="subtitle">When a cache expiry took down one of the largest e-commerce platforms during peak traffic.</div>
+                    </div>
+                </div>
+                <div class="section-body">
+                    <div class="incident-hero">
+                        <p style="color: var(--text-muted); font-size: 0.95rem;">Black Friday. 2:47 AM. Shopify's product recommendation cache expires.</p>
+                        <div class="big-number">47,000 simultaneous DB hits</div>
+                        <p style="color: var(--text-muted); font-size: 0.95rem;">Every request assumed it should rebuild the cache. At the same time.</p>
+                    </div>
+
+                    <div class="stats-row">
+                        <div class="stat-pill"><div class="icon">&#128200;</div><div class="val">98%</div><div class="lbl">CPU Spike</div></div>
+                        <div class="stat-pill"><div class="icon">&#9200;</div><div class="val">4.5s</div><div class="lbl">Response Time</div></div>
+                        <div class="stat-pill"><div class="icon">&#128165;</div><div class="val">8 min</div><div class="lbl">Downtime</div></div>
+                        <div class="stat-pill"><div class="icon">&#128176;</div><div class="val">$10M</div><div class="lbl">Estimated Loss</div></div>
+                    </div>
+
+                    <p>The cache was working perfectly. Then it expired. And every request assumed it should rebuild it. At the same time. This is called a <b>cache stampede</b> &mdash; and it's one of the most common ways caching goes from your biggest performance win to your worst outage.</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- 2: WHY CACHE -->
+        <div class="section-block" id="why-cache">
+            <div class="section-card">
+                <div class="section-header">
+                    <div class="section-icon" style="background: linear-gradient(135deg, var(--sky), var(--blue));">&#9889;</div>
+                    <div class="section-header-text">
+                        <h2>Why Caching Matters</h2>
+                        <div class="subtitle">The numbers speak for themselves.</div>
+                    </div>
+                </div>
+                <div class="section-body">
+                    <div class="table-wrap">
+                        <table class="compare-table">
+                            <tr><th>Operation</th><th>Latency</th><th>Speedup vs DB</th></tr>
+                            <tr><td><b>L1 CPU Cache</b></td><td class="y">0.5 ns</td><td class="y">100,000,000x</td></tr>
+                            <tr><td><b>L2 CPU Cache</b></td><td class="y">7 ns</td><td class="y">7,000,000x</td></tr>
+                            <tr><td><b>Redis (in-memory)</b></td><td class="y">0.1 ms</td><td class="y">50&ndash;500x</td></tr>
+                            <tr><td><b>SSD Read</b></td><td class="m">0.1 ms</td><td class="m">50&ndash;500x</td></tr>
+                            <tr><td><b>Database Query</b></td><td class="n">5&ndash;50 ms</td><td>&mdash;</td></tr>
+                            <tr><td><b>Network Round Trip</b></td><td class="n">50&ndash;150 ms</td><td>&mdash;</td></tr>
+                        </table>
+                    </div>
+
+                    <p>Caching stores frequently accessed data closer to where it's needed. The closer to the user, the faster the response. But caching seems simple until you pick the wrong strategy &mdash; and then it silently breaks your system.</p>
+
+                    <div class="analogy"><b>Analogy:</b> A cache is like keeping your most-used tools on your desk instead of in the garage. You could walk to the garage every time (database), or just reach for the desk (cache). But if someone rearranges the garage and your desk still has the old tools &mdash; you're working with stale data.</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 3: THE FOUR STRATEGIES -->
+        <div class="section-block" id="strategies">
+            <div class="section-card">
+                <div class="section-header">
+                    <div class="section-icon" style="background: linear-gradient(135deg, var(--blue), var(--purple));">&#9881;</div>
+                    <div class="section-header-text">
+                        <h2>The Four Caching Strategies</h2>
+                        <div class="subtitle">Same goal, different tradeoffs. Each one answers: when do you read from cache, and when do you write to it?</div>
+                    </div>
+                </div>
+                <div class="section-body">
+
+                    <!-- Cache-Aside -->
+                    <div class="strat-card cache-aside">
+                        <div class="strat-header">
+                            <div class="strat-icon">&#128270;</div>
+                            <div>
+                                <div class="strat-name">Cache-Aside (Lazy Loading)</div>
+                                <div class="strat-used">Used by most web apps &bull; Redis + Postgres</div>
+                            </div>
+                        </div>
+                        <div class="strat-body">
+                            <p>The application manages the cache directly. On read: check cache first. If it's a miss, read from DB, then write the result to cache. On write: update DB, then invalidate the cache.</p>
+                            <div class="strat-flow">
+                                <span class="node" style="background: rgba(56,189,248,0.15); color: var(--sky);">App</span>
+                                <span class="arrow">&rarr;</span>
+                                <span class="node" style="background: rgba(16,185,129,0.15); color: var(--green);">Cache</span>
+                                <span class="arrow">&rarr; miss &rarr;</span>
+                                <span class="node" style="background: rgba(236,72,153,0.15); color: var(--pink);">DB</span>
+                                <span class="arrow">&rarr; result &rarr;</span>
+                                <span class="node" style="background: rgba(16,185,129,0.15); color: var(--green);">Cache (SET)</span>
+                            </div>
+                        </div>
+                        <div class="pros-cons">
+                            <div class="pro"><div class="label">Strengths</div><p>Only caches data that's actually requested. No wasted memory. Simple to implement. Most popular pattern.</p></div>
+                            <div class="con"><div class="label">Risks</div><p>First request is always slow (cache cold). Stale data if DB updates without cache invalidation. Cache stampede on popular key expiry.</p></div>
+                        </div>
+                    </div>
+
+                    <!-- Write-Through -->
+                    <div class="strat-card write-through">
+                        <div class="strat-header">
+                            <div class="strat-icon">&#128221;</div>
+                            <div>
+                                <div class="strat-name">Write-Through</div>
+                                <div class="strat-used">Used by DynamoDB DAX &bull; Consistent reads</div>
+                            </div>
+                        </div>
+                        <div class="strat-body">
+                            <p>Every write goes to <b>both</b> cache and DB simultaneously. The cache is always fresh &mdash; reads never hit stale data.</p>
+                            <div class="strat-flow">
+                                <span class="node" style="background: rgba(56,189,248,0.15); color: var(--sky);">App</span>
+                                <span class="arrow">&rarr; write &rarr;</span>
+                                <span class="node" style="background: rgba(16,185,129,0.15); color: var(--green);">Cache</span>
+                                <span class="arrow">&rarr; sync &rarr;</span>
+                                <span class="node" style="background: rgba(236,72,153,0.15); color: var(--pink);">DB</span>
+                            </div>
+                        </div>
+                        <div class="pros-cons">
+                            <div class="pro"><div class="label">Strengths</div><p>Cache is always consistent with DB. No stale reads. Great when read-after-write consistency matters.</p></div>
+                            <div class="con"><div class="label">Risks</div><p>Write latency doubles (two writes per operation). Cache fills with data that may never be read. Wasted memory.</p></div>
+                        </div>
+                    </div>
+
+                    <!-- Write-Behind -->
+                    <div class="strat-card write-behind">
+                        <div class="strat-header">
+                            <div class="strat-icon">&#128165;</div>
+                            <div>
+                                <div class="strat-name">Write-Behind (Write-Back)</div>
+                                <div class="strat-used">Used by CPU caches &bull; Disk controllers</div>
+                            </div>
+                        </div>
+                        <div class="strat-body">
+                            <p>Write to cache first, return immediately. Flush to DB asynchronously later. The <b>fastest write path</b> &mdash; but the most dangerous.</p>
+                            <div class="strat-flow">
+                                <span class="node" style="background: rgba(56,189,248,0.15); color: var(--sky);">App</span>
+                                <span class="arrow">&rarr; write &rarr;</span>
+                                <span class="node" style="background: rgba(16,185,129,0.15); color: var(--green);">Cache</span>
+                                <span class="arrow">&rarr; ACK</span>
+                                <span class="arrow" style="color: var(--orange);">&nbsp;...async... &rarr;</span>
+                                <span class="node" style="background: rgba(236,72,153,0.15); color: var(--pink);">DB</span>
+                            </div>
+                        </div>
+                        <div class="pros-cons">
+                            <div class="pro"><div class="label">Strengths</div><p>Fastest writes. App gets instant ACK. Can batch DB writes for efficiency. Absorbs write spikes.</p></div>
+                            <div class="con"><div class="label">Risks</div><p>Data loss if cache crashes before flush. Complexity of async flush logic. Rarely used at application layer &mdash; common in hardware (CPU, SSD).</p></div>
+                        </div>
+                    </div>
+
+                    <!-- Read-Through -->
+                    <div class="strat-card read-through">
+                        <div class="strat-header">
+                            <div class="strat-icon">&#128218;</div>
+                            <div>
+                                <div class="strat-name">Read-Through</div>
+                                <div class="strat-used">Used by CDNs &bull; Hibernate L2 Cache</div>
+                            </div>
+                        </div>
+                        <div class="strat-body">
+                            <p>The cache sits between the app and DB transparently. App only talks to cache. On a miss, <b>the cache itself</b> reads from DB and stores the result.</p>
+                            <div class="strat-flow">
+                                <span class="node" style="background: rgba(56,189,248,0.15); color: var(--sky);">App</span>
+                                <span class="arrow">&rarr;</span>
+                                <span class="node" style="background: rgba(16,185,129,0.15); color: var(--green);">Cache</span>
+                                <span class="arrow">&rarr; miss &rarr;</span>
+                                <span class="node" style="background: rgba(236,72,153,0.15); color: var(--pink);">DB</span>
+                                <span class="arrow">&rarr; cache fills itself &rarr;</span>
+                                <span class="node" style="background: rgba(56,189,248,0.15); color: var(--sky);">App</span>
+                            </div>
+                        </div>
+                        <div class="pros-cons">
+                            <div class="pro"><div class="label">Strengths</div><p>App code is simple &mdash; just reads from cache. Cache handles all DB interaction. Clean separation of concerns.</p></div>
+                            <div class="con"><div class="label">Risks</div><p>First read is slow. Cache layer becomes a single point of failure. Less control over what gets cached.</p></div>
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+        </div>
+
+        <!-- 4: COMPARISON -->
+        <div class="section-block" id="comparison">
+            <div class="section-card">
+                <div class="section-header">
+                    <div class="section-icon" style="background: linear-gradient(135deg, var(--purple), var(--pink));">&#128202;</div>
+                    <div class="section-header-text">
+                        <h2>Strategy Comparison</h2>
+                        <div class="subtitle">When to use which.</div>
+                    </div>
+                </div>
+                <div class="section-body">
+                    <div class="table-wrap">
+                        <table class="compare-table">
+                            <tr><th>Strategy</th><th>Consistency</th><th>Read Speed</th><th>Write Speed</th><th>Complexity</th><th>Best For</th></tr>
+                            <tr><td><b>Cache-Aside</b></td><td class="m">Eventual</td><td class="y">Fast (after warm)</td><td class="y">Normal</td><td class="y">Simple</td><td>General purpose, most apps</td></tr>
+                            <tr><td><b>Write-Through</b></td><td class="y">Strong</td><td class="y">Always fast</td><td class="n">Slow (2x writes)</td><td class="y">Simple</td><td>Read-after-write consistency</td></tr>
+                            <tr><td><b>Write-Behind</b></td><td class="n">Eventual</td><td class="y">Fast</td><td class="y">Fastest</td><td class="n">Complex</td><td>Write-heavy, can tolerate loss</td></tr>
+                            <tr><td><b>Read-Through</b></td><td class="m">Eventual</td><td class="y">Fast (after warm)</td><td class="y">Normal</td><td class="m">Moderate</td><td>CDNs, transparent caching</td></tr>
+                        </table>
+                    </div>
+
+                    <p><b>The difference between Cache-Aside and Read-Through</b> is subtle but important: in Cache-Aside, the <b>app</b> manages cache misses. In Read-Through, the <b>cache layer</b> handles misses transparently. Same result, different responsibility.</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- 5: CACHE STAMPEDE -->
+        <div class="section-block" id="stampede">
+            <div class="section-card">
+                <div class="section-header">
+                    <div class="section-icon" style="background: linear-gradient(135deg, var(--red), var(--orange));">&#128680;</div>
+                    <div class="section-header-text">
+                        <h2>Cache Stampede (Thundering Herd)</h2>
+                        <div class="subtitle">When a popular cache key expires and thousands of requests simultaneously try to rebuild it.</div>
+                    </div>
+                </div>
+                <div class="section-body">
+                    <p>A popular key expires. 10,000 requests arrive in the next second. All see a cache miss. All query the database. All try to write the result back to cache. The database gets 10,000 identical queries instead of 1.</p>
+
+                    <p><b>Three solutions:</b></p>
+
+                    <div class="feat-grid">
+                        <div class="feat-card">
+                            <div class="feat-icon">&#127922;</div>
+                            <div>
+                                <h4>TTL Jitter</h4>
+                                <p>Randomize expiry times. Instead of all keys expiring at exactly 60s, expire between 55&ndash;65s. Keys don't all go cold at once. Simple. Effective. First line of defense.</p>
+                            </div>
+                        </div>
+                        <div class="feat-card">
+                            <div class="feat-icon">&#128274;</div>
+                            <div>
+                                <h4>Locking (Mutex)</h4>
+                                <p>On cache miss, acquire a lock (Redis SETNX). Only one request rebuilds the cache. Others wait or serve stale data. Prevents duplicate DB queries.</p>
+                            </div>
+                        </div>
+                        <div class="feat-card">
+                            <div class="feat-icon">&#9200;</div>
+                            <div>
+                                <h4>Early Recompute</h4>
+                                <p>Probabilistically refresh the cache before it expires. If TTL is 60s, start refreshing at 50s with increasing probability. Cache never actually goes cold.</p>
+                            </div>
+                        </div>
+                        <div class="feat-card">
+                            <div class="feat-icon">&#128196;</div>
+                            <div>
+                                <h4>Stale-While-Revalidate</h4>
+                                <p>Serve stale data immediately while refreshing in the background. User gets a fast response. Cache gets updated. HTTP uses this exact header.</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="analogy"><b>The Shopify fix:</b> TTL jitter + mutex locking. Randomize expiry so keys don't all die at once. If they do, only one request rebuilds while others serve stale data. Two lines of defense.</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 6: DISTRIBUTED CACHING -->
+        <div class="section-block" id="distributed">
+            <div class="section-card">
+                <div class="section-header">
+                    <div class="section-icon" style="background: linear-gradient(135deg, var(--cyan), var(--blue));">&#127760;</div>
+                    <div class="section-header-text">
+                        <h2>Distributed Caching</h2>
+                        <div class="subtitle">When one Redis instance isn't enough.</div>
+                    </div>
+                </div>
+                <div class="section-body">
+                    <p>A single Redis instance handles 100K+ ops/sec. But at scale, you need multiple cache nodes. This brings familiar challenges &mdash; which node holds which key?</p>
+
+                    <p><b>Consistent hashing</b> (Chapter 6) is the answer. Keys and nodes sit on a ring. Add a node &rarr; only 1/N keys move. The cache stays warm through scaling events.</p>
+
+                    <div class="table-wrap">
+                        <table class="compare-table">
+                            <tr><th>Approach</th><th>How It Works</th><th>Tradeoff</th></tr>
+                            <tr><td><b>Redis Cluster</b></td><td>16,384 hash slots distributed across nodes. Automatic resharding.</td><td class="y">Built-in, production-ready</td></tr>
+                            <tr><td><b>Client-Side Sharding</b></td><td>App decides which node via consistent hashing.</td><td class="m">Simple but no auto-failover</td></tr>
+                            <tr><td><b>Redis Sentinel</b></td><td>Primary-replica with automatic failover.</td><td class="y">High availability, not horizontal scale</td></tr>
+                            <tr><td><b>Memcached</b></td><td>Multi-threaded, client-side distribution. No replication.</td><td class="m">Fast but no persistence</td></tr>
+                        </table>
+                    </div>
+
+                    <div class="analogy"><b>Netflix's EVCache:</b> Distributed caching layer built on Memcached. 2 trillion requests per day across tens of thousands of nodes. Uses consistent hashing for routing. Handles 30 million ops/sec at peak.</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 7: THE INTERVIEW -->
+        <div class="section-block" id="interview">
+            <div class="section-card">
+                <div class="section-header">
+                    <div class="section-icon" style="background: linear-gradient(135deg, var(--sky), var(--blue));">&#128188;</div>
+                    <div class="section-header-text">
+                        <h2>The System Design Interview</h2>
+                        <div class="subtitle">"How would you add caching to this system?"</div>
+                    </div>
+                </div>
+                <div class="section-body">
+                    <div class="interview-box">
+                        <div class="q">"Your API is slow. P99 latency is 800ms. Most of the time is spent in database queries. How do you fix it?"</div>
+                        <div class="label bad">&#10008; THE REJECTED ANSWER</div>
+                        <div class="wrong">"I'll add Redis in front of the database. <b>Cache everything.</b>"</div>
+                        <div style="margin-top: 0.5rem; font-size: 0.78rem; color: var(--text-dim);">Interviewer thinking: "Cache everything? What about invalidation? Stale data? Memory limits? This is a red flag."</div>
+                    </div>
+
+                    <div class="interview-box" style="margin-top: 1rem;">
+                        <div class="q">Same question. Better answer.</div>
+                        <div class="label good">&#10004; THE STAFF-LEVEL ANSWER</div>
+                        <div class="a">"First, I'd profile to find the hot queries &mdash; 20% of queries usually drive 80% of load. I'd use <b>cache-aside with Redis</b> for those specific queries. TTL of 5 minutes with jitter to prevent stampedes. For cache invalidation, I'd invalidate on write to the same entity. For popular keys, I'd add <b>mutex locking</b> so only one request rebuilds on expiry. I'd monitor cache hit rate &mdash; below 90% means the TTL is too short or we're caching the wrong things. For the distributed layer, Redis Cluster with consistent hashing. And I'd design the system to <b>degrade gracefully</b> &mdash; if Redis goes down, requests fall through to the database. Slower, but not broken."</div>
+                    </div>
+
+                    <p><b>What interviewers look for:</b></p>
+                    <div class="feat-grid">
+                        <div class="feat-card">
+                            <div class="feat-icon">&#128270;</div>
+                            <div>
+                                <h4>Strategy Choice + Why</h4>
+                                <p>Name the strategy. Explain why cache-aside fits. Mention the tradeoff with stale data.</p>
+                            </div>
+                        </div>
+                        <div class="feat-card">
+                            <div class="feat-icon">&#128165;</div>
+                            <div>
+                                <h4>Invalidation Strategy</h4>
+                                <p>"How do you keep cache and DB in sync?" TTL, write-through invalidation, event-driven invalidation.</p>
+                            </div>
+                        </div>
+                        <div class="feat-card">
+                            <div class="feat-icon">&#128680;</div>
+                            <div>
+                                <h4>Stampede Awareness</h4>
+                                <p>Mention TTL jitter, mutex locking. This separates someone who's read about caching from someone who's operated it.</p>
+                            </div>
+                        </div>
+                        <div class="feat-card">
+                            <div class="feat-icon">&#128200;</div>
+                            <div>
+                                <h4>Metrics</h4>
+                                <p>Cache hit rate, eviction rate, memory usage. If you can't measure it, you can't optimize it.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 8: TAKEAWAYS -->
+        <div class="section-block" id="takeaways">
+            <div class="section-card">
+                <div class="section-header">
+                    <div class="section-icon" style="background: linear-gradient(135deg, var(--green), var(--cyan));">&#127919;</div>
+                    <div class="section-header-text">
+                        <h2>Key Takeaways</h2>
+                        <div class="subtitle">What to remember about Caching Strategies</div>
+                    </div>
+                </div>
+                <div class="section-body">
+                    <div class="takeaways">
+                        <div class="tk"><div class="tk-icon">&#128270;</div><h4>Cache-Aside Is Default</h4><p>Most apps start here. Check cache, miss goes to DB, write result back. Simple, effective, battle-tested.</p></div>
+                        <div class="tk"><div class="tk-icon">&#128221;</div><h4>Know All Four</h4><p>Cache-Aside, Write-Through, Write-Behind, Read-Through. Each has a use case. Picking wrong is worse than not caching.</p></div>
+                        <div class="tk"><div class="tk-icon">&#128680;</div><h4>Stampede Prevention</h4><p>TTL jitter + mutex locking. Two lines of defense against the most common cache failure mode.</p></div>
+                        <div class="tk"><div class="tk-icon">&#128203;</div><h4>Invalidation Is Hard</h4><p>"There are only two hard things: cache invalidation and naming things." Design your invalidation strategy before you cache.</p></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <footer>
+        <div class="gradient-line"></div>
+        <p>System Design for Dummies &mdash; Chapter 10: Caching Strategies</p>
+        <div style="margin-top: 1.5rem; display: flex; gap: 1rem; justify-content: center;">
+            <a href="chapter9.html" class="nav-btn" style="background: var(--bg-card); border: 1px solid var(--border);">&larr; Ch 9: Event-Driven Architecture</a>
+            <a href="index.html" class="nav-btn">All Chapters</a>
+        </div>
+    </footer>
+
+    <script>
+        const blocks = document.querySelectorAll('.section-block');
+        const observer = new IntersectionObserver((entries) => {
+            entries.forEach(entry => { if (entry.isIntersecting) entry.target.classList.add('visible'); });
+        }, { threshold: 0.1 });
+        blocks.forEach(b => observer.observe(b));
+
+        const sidebarLinks = document.querySelectorAll('.sidebar a');
+        const sections = document.querySelectorAll('[id]');
+        window.addEventListener('scroll', () => {
+            let current = '';
+            sections.forEach(section => {
+                if (window.scrollY >= section.offsetTop - 200) current = section.getAttribute('id');
+            });
+            sidebarLinks.forEach(link => {
+                link.classList.remove('active');
+                if (link.getAttribute('href') === '#' + current) link.classList.add('active');
+            });
+        });
+    </script>
+
+    <script>
+        if (new URLSearchParams(window.location.search).has('print')) {
+            const s = document.createElement('style');
+            s.textContent = `
+                .section-block { opacity:1!important; transform:none!important; transition:none!important; }
+                nav, .sidebar { position:relative!important; }
+                .sidebar { display:none!important; }
+                nav { display:none!important; }
+                @media print {
+                    @page { margin: 0; }
+                    * { -webkit-print-color-adjust:exact!important; print-color-adjust:exact!important; }
+                    body { background: var(--bg)!important; margin: 0!important; padding: 0!important; }
+                    .chapter-hero { min-height: 100vh!important; display: flex!important; flex-direction: column!important; align-items: center!important; justify-content: center!important; padding: 2rem!important; padding-top: 2rem!important; margin-top: 0!important; page-break-after: always!important; }
+                    .section-block { page-break-before: always!important; page-break-inside: avoid!important; padding-top: 2rem!important; }
+                    .section-card { page-break-inside: avoid!important; }
+                    .choice-section, .feat-grid, .stats-row, .takeaways, .interview-box, .table-wrap, .incident-hero, .analogy, .strat-card { page-break-inside: avoid!important; }
+                    footer { page-break-before: always!important; }
+                    .content-section { padding: 0 2rem!important; }
+                }
+            `;
+            document.head.appendChild(s);
+            document.querySelectorAll('.section-block').forEach(el => {
+                el.style.setProperty('opacity','1','important');
+                el.style.setProperty('transform','none','important');
+                el.classList.add('visible');
+            });
+            window.addEventListener('load', () => setTimeout(() => window.print(), 500));
+        }
+    </script>
+
+</body>
+</html>
