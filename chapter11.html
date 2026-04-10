@@ -1,0 +1,579 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ch 11: Cache Eviction Policies &mdash; System Design for Dummies</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧠</text></svg>">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap');
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        :root {
+            --bg: #0f172a; --bg-card: #1e293b; --bg-code: #0d1117;
+            --text: #f8fafc; --text-muted: #94a3b8; --text-dim: #64748b;
+            --border: #334155; --blue: #3b82f6; --green: #10b981;
+            --orange: #f59e0b; --purple: #8b5cf6; --pink: #ec4899;
+            --red: #ef4444; --cyan: #06b6d4; --indigo: #6366f1;
+            --amber: #f59e0b; --rose: #f43f5e;
+        }
+        html { scroll-behavior: smooth; scrollbar-width: thin; scrollbar-color: var(--border) var(--bg); }
+        body { font-family: 'Inter', -apple-system, sans-serif; background: var(--bg); color: var(--text); line-height: 1.6; overflow-x: hidden; }
+
+        nav { position: fixed; top: 0; left: 0; right: 0; z-index: 100; background: rgba(15,23,42,0.85); backdrop-filter: blur(20px); border-bottom: 1px solid rgba(51,65,85,0.5); }
+        .nav-inner { max-width: 1100px; margin: 0 auto; padding: 0.65rem 2rem; display: flex; align-items: center; justify-content: space-between; }
+        .nav-left { display: flex; align-items: center; gap: 1rem; }
+        .nav-logo { display: flex; align-items: center; gap: 0.6rem; font-weight: 800; font-size: 0.95rem; text-decoration: none; color: var(--text); letter-spacing: -0.5px; }
+        .nav-logo-icon { width: 28px; height: 28px; border-radius: 7px; background: linear-gradient(135deg, var(--blue), var(--purple)); display: flex; align-items: center; justify-content: center; font-size: 0.65rem; font-weight: 900; color: white; }
+        .nav-logo span { background: linear-gradient(135deg, var(--blue), var(--purple)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        .nav-sep { width: 1px; height: 18px; background: var(--border); }
+        .nav-chapter-badge { display: flex; align-items: center; gap: 0.4rem; font-size: 0.72rem; font-weight: 600; color: var(--rose); background: rgba(244,63,94,0.08); border: 1px solid rgba(244,63,94,0.15); padding: 0.2rem 0.7rem; border-radius: 50px; }
+        .nav-chapter-badge .dot { width: 5px; height: 5px; border-radius: 50%; background: var(--rose); }
+        .nav-center { display: flex; gap: 0.25rem; }
+        .nav-center a { color: var(--text-muted); text-decoration: none; font-size: 0.78rem; font-weight: 500; padding: 0.35rem 0.7rem; border-radius: 6px; transition: all 0.2s; }
+        .nav-center a:hover { color: var(--text); background: rgba(244,63,94,0.1); }
+        .nav-right { display: flex; align-items: center; }
+        .nav-counter { font-family: 'JetBrains Mono', monospace; font-size: 0.72rem; color: var(--text-dim); background: var(--bg-card); padding: 0.25rem 0.6rem; border-radius: 20px; border: 1px solid var(--border); }
+
+        .sidebar { position: fixed; left: 1.2rem; top: 50%; transform: translateY(-50%); z-index: 50; display: flex; flex-direction: column; gap: 4px; }
+        .sidebar a { width: 8px; height: 8px; border-radius: 50%; background: var(--border); transition: all 0.3s; display: block; position: relative; }
+        .sidebar a:hover { background: var(--text-muted); transform: scale(1.5); }
+        .sidebar a.active { background: var(--rose); box-shadow: 0 0 8px rgba(244,63,94,0.5); transform: scale(1.5); }
+        .sidebar a .tooltip { position: absolute; left: 18px; top: 50%; transform: translateY(-50%); background: var(--bg-card); color: var(--text); padding: 0.3rem 0.7rem; border-radius: 6px; font-size: 0.65rem; white-space: nowrap; opacity: 0; pointer-events: none; transition: opacity 0.2s; border: 1px solid var(--border); }
+        .sidebar a:hover .tooltip { opacity: 1; }
+
+        .chapter-hero { padding: 8rem 2rem 4rem; text-align: center; position: relative; overflow: hidden; }
+        .chapter-hero-bg { position: absolute; inset: 0; background: radial-gradient(ellipse at 30% 50%, rgba(244,63,94,0.1) 0%, transparent 60%), radial-gradient(ellipse at 70% 30%, rgba(139,92,246,0.08) 0%, transparent 50%); }
+        .chapter-hero-content { position: relative; max-width: 700px; margin: 0 auto; }
+        .chapter-label { display: inline-flex; align-items: center; gap: 0.5rem; font-size: 0.75rem; font-weight: 600; text-transform: uppercase; letter-spacing: 2px; color: var(--rose); margin-bottom: 1.2rem; }
+        .chapter-label .ch-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--rose); }
+        .chapter-hero h1 { font-size: clamp(2rem, 5vw, 3rem); font-weight: 900; letter-spacing: -1.5px; line-height: 1.15; margin-bottom: 0.8rem; }
+        .chapter-hero h1 .gradient { background: linear-gradient(135deg, var(--rose), var(--purple)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        .chapter-hero-content > p { color: var(--text-muted); font-size: 1.05rem; max-width: 520px; margin: 0 auto; line-height: 1.7; }
+        .chapter-tags { display: flex; justify-content: center; gap: 0.5rem; flex-wrap: wrap; margin-top: 1.8rem; }
+        .chapter-tag { padding: 0.3rem 0.85rem; border-radius: 50px; font-size: 0.7rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
+
+        .content-section { max-width: 900px; margin: 0 auto; padding: 2rem 2rem 4rem; }
+        .section-block { position: relative; margin-bottom: 4rem; opacity: 0; transform: translateY(30px); transition: all 0.6s cubic-bezier(0.16, 1, 0.3, 1); }
+        .section-block.visible { opacity: 1; transform: translateY(0); }
+        .section-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 16px; overflow: hidden; }
+        .section-header { padding: 1.5rem 2rem 1rem; display: flex; align-items: flex-start; gap: 1rem; }
+        .section-icon { width: 44px; height: 44px; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 1.2rem; flex-shrink: 0; }
+        .section-header-text h2 { font-size: 1.3rem; font-weight: 800; letter-spacing: -0.5px; margin-bottom: 0.2rem; }
+        .section-header-text .subtitle { font-size: 0.85rem; color: var(--text-muted); line-height: 1.6; }
+        .section-body { padding: 0.5rem 2rem 2rem; }
+        .section-body p { color: var(--text-muted); font-size: 0.92rem; line-height: 1.8; margin-bottom: 1.2rem; }
+        .section-body p b { color: var(--text); }
+
+        .incident-hero { background: linear-gradient(135deg, rgba(244,63,94,0.08), rgba(139,92,246,0.05)); border: 1px solid rgba(244,63,94,0.15); border-radius: 14px; padding: 2rem; text-align: center; margin-bottom: 1.5rem; }
+        .incident-hero .big-number { font-family: 'JetBrains Mono', monospace; font-size: 2.5rem; font-weight: 800; background: linear-gradient(135deg, var(--rose), var(--purple)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; margin: 0.8rem 0; line-height: 1.2; }
+
+        .feat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.8rem; margin: 1.5rem 0; }
+        .feat-card { background: rgba(30,41,59,0.5); border: 1px solid var(--border); border-radius: 12px; padding: 1.2rem; display: flex; gap: 0.8rem; align-items: flex-start; }
+        .feat-card .feat-icon { font-size: 1.4rem; flex-shrink: 0; }
+        .feat-card h4 { font-size: 0.88rem; font-weight: 700; margin-bottom: 0.2rem; }
+        .feat-card p { font-size: 0.8rem; color: var(--text-dim); line-height: 1.5; margin: 0; }
+
+        .table-wrap { border-radius: 12px; overflow: hidden; margin: 1.5rem 0; border: 1px solid var(--border); }
+        .compare-table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+        .compare-table th { background: var(--bg-card); color: var(--text-muted); padding: 0.8rem 1rem; text-align: left; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; font-size: 0.68rem; border-bottom: 2px solid var(--border); }
+        .compare-table td { padding: 0.7rem 1rem; border-bottom: 1px solid rgba(51,65,85,0.5); color: var(--text-muted); }
+        .compare-table tr:nth-child(even) td { background: rgba(15,23,42,0.3); }
+        .compare-table tr:last-child td { border-bottom: none; }
+        .y { color: var(--green); font-weight: 700; }
+        .n { color: #fca5a5; font-weight: 700; }
+        .m { color: var(--orange); font-weight: 700; }
+
+        .analogy { background: rgba(244,63,94,0.05); border: 1px solid rgba(244,63,94,0.12); border-radius: 10px; padding: 1rem 1.2rem; margin: 1rem 0; font-size: 0.82rem; color: var(--text-muted); line-height: 1.6; }
+        .analogy b { color: #fda4af; }
+
+        /* ── Policy Card ── */
+        .policy-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 14px; padding: 1.5rem; margin: 1.2rem 0; position: relative; overflow: hidden; }
+        .policy-card::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px; }
+        .policy-card.lru::before { background: linear-gradient(90deg, var(--blue), var(--cyan)); }
+        .policy-card.lfu::before { background: linear-gradient(90deg, var(--orange), var(--amber)); }
+        .policy-card.fifo::before { background: linear-gradient(90deg, var(--cyan), var(--green)); }
+        .policy-card.ttl::before { background: linear-gradient(90deg, var(--pink), var(--rose)); }
+        .policy-card.mru::before { background: linear-gradient(90deg, var(--purple), var(--indigo)); }
+        .policy-card.sieve::before { background: linear-gradient(90deg, var(--green), var(--cyan)); }
+        .policy-card .pol-header { display: flex; align-items: center; gap: 0.8rem; margin-bottom: 0.8rem; }
+        .policy-card .pol-icon { font-size: 1.5rem; }
+        .policy-card .pol-name { font-size: 1.1rem; font-weight: 800; }
+        .policy-card .pol-used { font-size: 0.68rem; color: var(--text-dim); font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
+        .policy-card .pol-body { font-size: 0.85rem; color: var(--text-muted); line-height: 1.7; }
+        .policy-card .pol-body b { color: var(--text); }
+        .policy-card .pros-cons { display: flex; gap: 1rem; margin-top: 1rem; }
+        .policy-card .pro, .policy-card .con { flex: 1; font-size: 0.78rem; }
+        .policy-card .pro .label { color: var(--green); font-weight: 700; font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 0.3rem; }
+        .policy-card .con .label { color: var(--red); font-weight: 700; font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 0.3rem; }
+        .policy-card .pro p, .policy-card .con p { color: var(--text-dim); line-height: 1.5; margin: 0; }
+
+        /* ── Twitter Box ── */
+        .twitter-box { background: linear-gradient(135deg, rgba(6,182,212,0.06), rgba(6,182,212,0.02)); border: 1px solid rgba(6,182,212,0.15); border-radius: 14px; padding: 1.5rem; margin: 1.5rem 0; }
+        .twitter-box .tw-header { display: flex; align-items: center; gap: 0.6rem; margin-bottom: 1rem; }
+        .twitter-box .tw-logo { font-size: 1.3rem; }
+        .twitter-box .tw-title { font-size: 0.9rem; font-weight: 800; color: var(--cyan); }
+        .twitter-box .tw-sub { font-size: 0.7rem; color: var(--text-dim); }
+        .twitter-box p { font-size: 0.82rem; color: var(--text-muted); line-height: 1.7; margin-bottom: 0.8rem; }
+        .twitter-box p b { color: var(--text); }
+        .twitter-box .tw-quote { background: var(--bg-code); border-left: 3px solid var(--cyan); padding: 0.8rem 1rem; margin: 0.8rem 0; font-family: 'JetBrains Mono', monospace; font-size: 0.82rem; color: var(--cyan); border-radius: 0 8px 8px 0; }
+
+        .interview-box { background: linear-gradient(135deg, rgba(244,63,94,0.06), rgba(139,92,246,0.04)); border: 1px solid rgba(244,63,94,0.15); border-radius: 14px; padding: 1.5rem; margin: 1.5rem 0; }
+        .interview-box .q { font-size: 0.85rem; font-weight: 700; color: var(--text); margin-bottom: 0.5rem; padding-left: 1rem; border-left: 3px solid var(--rose); }
+        .interview-box .a { font-size: 0.82rem; color: var(--text-muted); line-height: 1.7; margin-top: 0.8rem; padding-left: 1rem; border-left: 3px solid var(--green); }
+        .interview-box .wrong { font-size: 0.82rem; color: var(--text-muted); line-height: 1.7; margin-top: 0.8rem; padding-left: 1rem; border-left: 3px solid var(--red); }
+        .interview-box .wrong b { color: #fca5a5; }
+        .interview-box .a b { color: #6ee7b7; }
+        .interview-box .label { font-size: 0.62rem; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 0.3rem; }
+        .interview-box .label.bad { color: var(--red); }
+        .interview-box .label.good { color: var(--green); }
+
+        .takeaways { display: flex; gap: 1rem; margin: 1.5rem 0; }
+        .tk { flex: 1; background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; padding: 1.3rem; position: relative; overflow: hidden; }
+        .tk::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px; }
+        .tk:nth-child(1)::before { background: linear-gradient(90deg, var(--blue), var(--cyan)); }
+        .tk:nth-child(2)::before { background: linear-gradient(90deg, var(--orange), var(--amber)); }
+        .tk:nth-child(3)::before { background: linear-gradient(90deg, var(--cyan), var(--green)); }
+        .tk:nth-child(4)::before { background: linear-gradient(90deg, var(--rose), var(--pink)); }
+        .tk .tk-icon { font-size: 1.3rem; margin-bottom: 0.5rem; }
+        .tk h4 { font-size: 0.9rem; font-weight: 700; margin-bottom: 0.3rem; }
+        .tk p { font-size: 0.8rem; color: var(--text-dim); line-height: 1.6; }
+
+        footer { border-top: 1px solid var(--border); padding: 3rem 2rem; text-align: center; }
+        footer p { color: var(--text-dim); font-size: 0.85rem; }
+        footer .gradient-line { width: 100px; height: 3px; background: linear-gradient(90deg, var(--rose), var(--purple), var(--blue)); margin: 0 auto 1.5rem; border-radius: 2px; }
+        .nav-btn { display: inline-flex; align-items: center; gap: 0.5rem; padding: 0.7rem 1.5rem; background: linear-gradient(135deg, var(--rose), var(--purple)); color: white; border: none; border-radius: 10px; font-size: 0.9rem; font-weight: 600; cursor: pointer; text-decoration: none; transition: all 0.3s; margin-top: 1rem; }
+        .nav-btn:hover { transform: translateY(-2px); box-shadow: 0 8px 30px rgba(244,63,94,0.3); }
+
+        @media (max-width: 768px) {
+            .sidebar { display: none; }
+            .nav-center { display: none; }
+            .feat-grid { grid-template-columns: 1fr; }
+            .takeaways { flex-direction: column; }
+            .policy-card .pros-cons { flex-direction: column; }
+        }
+        @page { margin: 0; }
+    </style>
+</head>
+<body>
+
+    <nav>
+        <div class="nav-inner">
+            <div class="nav-left">
+                <a href="index.html" class="nav-logo"><div class="nav-logo-icon">SD</div><span>System Design for Dummies</span></a>
+                <div class="nav-sep"></div>
+                <div class="nav-chapter-badge"><div class="dot"></div>Chapter 11</div>
+            </div>
+            <div class="nav-center">
+                <a href="index.html">Home</a>
+                <a href="chapter8.html">Ch 8</a>
+                <a href="chapter9.html">Ch 9</a>
+                <a href="chapter10.html">Ch 10</a>
+            </div>
+            <div class="nav-right"><span class="nav-counter">7 sections</span></div>
+        </div>
+    </nav>
+
+    <div class="sidebar" id="sidebar">
+        <a href="#hero"><span class="tooltip">Intro</span></a>
+        <a href="#the-problem"><span class="tooltip">The Problem</span></a>
+        <a href="#policies"><span class="tooltip">Policies</span></a>
+        <a href="#comparison"><span class="tooltip">Comparison</span></a>
+        <a href="#twitter"><span class="tooltip">Twitter Research</span></a>
+        <a href="#interview"><span class="tooltip">Interview</span></a>
+        <a href="#takeaways"><span class="tooltip">Takeaways</span></a>
+    </div>
+
+    <section class="chapter-hero" id="hero">
+        <div class="chapter-hero-bg"></div>
+        <div class="chapter-hero-content">
+            <div class="chapter-label"><div class="ch-dot"></div>Chapter 11 &mdash; Deep Dive</div>
+            <h1><span class="gradient">Cache Eviction</span><br>Policies</h1>
+            <p>Your cache is full. A new item arrives. Which one gets kicked out? The answer depends on the eviction policy &mdash; and most people pick the wrong one.</p>
+            <div class="chapter-tags">
+                <span class="chapter-tag" style="background: rgba(59,130,246,0.1); color: var(--blue); border: 1px solid rgba(59,130,246,0.2);">LRU</span>
+                <span class="chapter-tag" style="background: rgba(245,158,11,0.1); color: var(--orange); border: 1px solid rgba(245,158,11,0.2);">LFU</span>
+                <span class="chapter-tag" style="background: rgba(6,182,212,0.1); color: var(--cyan); border: 1px solid rgba(6,182,212,0.2);">FIFO</span>
+                <span class="chapter-tag" style="background: rgba(236,72,153,0.1); color: var(--pink); border: 1px solid rgba(236,72,153,0.2);">TTL</span>
+                <span class="chapter-tag" style="background: rgba(16,185,129,0.1); color: var(--green); border: 1px solid rgba(16,185,129,0.2);">SIEVE</span>
+            </div>
+        </div>
+    </section>
+
+    <div class="content-section">
+
+        <!-- 1: THE PROBLEM -->
+        <div class="section-block" id="the-problem">
+            <div class="section-card">
+                <div class="section-header">
+                    <div class="section-icon" style="background: linear-gradient(135deg, var(--rose), var(--purple));">&#128680;</div>
+                    <div class="section-header-text">
+                        <h2>The Eviction Problem</h2>
+                        <div class="subtitle">Cache memory is finite. When it's full, every new entry requires removing an existing one. The question: which one?</div>
+                    </div>
+                </div>
+                <div class="section-body">
+                    <div class="incident-hero">
+                        <p style="color: var(--text-muted); font-size: 0.95rem;">Your cache has 4 slots. All full. A new item E arrives.</p>
+                        <div class="big-number">Who gets evicted?</div>
+                        <p style="color: var(--text-muted); font-size: 0.95rem;">The wrong choice means your most useful data gets thrown out. Cache hit rate drops. Database load spikes.</p>
+                    </div>
+
+                    <p>Eviction seems like a small decision. But at scale, the difference between a 95% and 85% cache hit rate can mean <b>10x more database load</b>. The eviction policy determines what stays and what goes &mdash; and every policy makes a different bet on what you'll need next.</p>
+
+                    <div class="analogy"><b>The real-world version:</b> Your desk has limited space. You can keep 10 books on it. The 11th arrives. Do you remove the one you haven't touched in weeks (LRU)? The one you've only opened once (LFU)? The one that arrived first (FIFO)? Or the one with a due date that passed (TTL)? Each strategy makes a different assumption about what's valuable.</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 2: THE POLICIES -->
+        <div class="section-block" id="policies">
+            <div class="section-card">
+                <div class="section-header">
+                    <div class="section-icon" style="background: linear-gradient(135deg, var(--blue), var(--purple));">&#9881;</div>
+                    <div class="section-header-text">
+                        <h2>The Eviction Policies</h2>
+                        <div class="subtitle">Six policies, each with a different philosophy on what to keep and what to discard.</div>
+                    </div>
+                </div>
+                <div class="section-body">
+
+                    <div class="policy-card lru">
+                        <div class="pol-header">
+                            <div class="pol-icon">&#128338;</div>
+                            <div>
+                                <div class="pol-name">LRU &mdash; Least Recently Used</div>
+                                <div class="pol-used">Redis &bull; Memcached &bull; Linux Page Cache &bull; Most systems</div>
+                            </div>
+                        </div>
+                        <div class="pol-body">
+                            <p>Evict the item that hasn't been <b>accessed</b> for the longest time. The assumption: if you haven't used it recently, you probably won't need it soon.</p>
+                            <p>Every read and write updates the item's position. The least recently touched item sits at the back of the queue. When eviction is needed, the back of the queue goes first.</p>
+                        </div>
+                        <div class="pros-cons">
+                            <div class="pro"><div class="label">Strengths</div><p>Good default. Works well for most access patterns. Intuitive. Battle-tested across decades of production systems.</p></div>
+                            <div class="con"><div class="label">Tradeoffs</div><p>Every read updates access order &mdash; CPU overhead at high throughput. A one-time full scan (like a batch job) can flush your entire hot working set.</p></div>
+                        </div>
+                    </div>
+
+                    <div class="policy-card lfu">
+                        <div class="pol-header">
+                            <div class="pol-icon">&#128200;</div>
+                            <div>
+                                <div class="pol-name">LFU &mdash; Least Frequently Used</div>
+                                <div class="pol-used">Redis (allkeys-lfu) &bull; CDNs &bull; Highly skewed workloads</div>
+                            </div>
+                        </div>
+                        <div class="pol-body">
+                            <p>Evict the item that's been accessed the <b>fewest times overall</b>. The assumption: items accessed many times are more valuable than items accessed rarely.</p>
+                            <p>Each item carries a counter. Every access increments it. The item with the lowest count gets evicted first.</p>
+                        </div>
+                        <div class="pros-cons">
+                            <div class="pro"><div class="label">Strengths</div><p>Excellent for skewed workloads where a small set of keys gets most of the traffic. Keeps the truly hot data around.</p></div>
+                            <div class="con"><div class="label">Tradeoffs</div><p>A once-viral key that's now cold keeps its high count forever &mdash; it never gets evicted. Needs a decay mechanism (Redis uses probabilistic aging). More memory per key (counter storage).</p></div>
+                        </div>
+                    </div>
+
+                    <div class="policy-card fifo">
+                        <div class="pol-header">
+                            <div class="pol-icon">&#128203;</div>
+                            <div>
+                                <div class="pol-name">FIFO &mdash; First In, First Out</div>
+                                <div class="pol-used">Simple caches &bull; Twitter's Twemcache &bull; Kernel buffers</div>
+                            </div>
+                        </div>
+                        <div class="pol-body">
+                            <p>Evict the <b>oldest item</b> &mdash; the one that was inserted first. No tracking of access patterns. Pure queue: first in, first out.</p>
+                            <p>No per-read metadata updates. No access counters. No reordering. Just a pointer to the head of the queue.</p>
+                        </div>
+                        <div class="pros-cons">
+                            <div class="pro"><div class="label">Strengths</div><p>Simplest possible implementation. Lowest CPU overhead. No per-read bookkeeping. Twitter's research showed it performs surprisingly close to LRU.</p></div>
+                            <div class="con"><div class="label">Tradeoffs</div><p>Ignores access patterns entirely. A frequently accessed item gets evicted just because it's old. Works best when access patterns are roughly uniform.</p></div>
+                        </div>
+                    </div>
+
+                    <div class="policy-card ttl">
+                        <div class="pol-header">
+                            <div class="pol-icon">&#9200;</div>
+                            <div>
+                                <div class="pol-name">TTL &mdash; Time To Live</div>
+                                <div class="pol-used">DNS &bull; Session tokens &bull; API responses &bull; CDN edges</div>
+                            </div>
+                        </div>
+                        <div class="pol-body">
+                            <p>Every item gets a <b>countdown timer</b> when it enters the cache. When the timer hits zero, the item expires &mdash; regardless of how popular or recently accessed it is.</p>
+                            <p>TTL is less about choosing what to evict and more about ensuring freshness. It's the only policy that guarantees data staleness is bounded.</p>
+                        </div>
+                        <div class="pros-cons">
+                            <div class="pro"><div class="label">Strengths</div><p>Predictable. Guarantees maximum staleness. Perfect for data that changes on a known schedule (DNS records, session tokens, config).</p></div>
+                            <div class="con"><div class="label">Tradeoffs</div><p>Doesn't consider popularity or access patterns. If many keys share the same TTL, they all expire at once &mdash; causing a cache stampede (Chapter 10).</p></div>
+                        </div>
+                    </div>
+
+                    <div class="policy-card mru">
+                        <div class="pol-header">
+                            <div class="pol-icon">&#128260;</div>
+                            <div>
+                                <div class="pol-name">MRU &mdash; Most Recently Used</div>
+                                <div class="pol-used">Niche &bull; Sequential scan workloads &bull; Database buffer pools</div>
+                            </div>
+                        </div>
+                        <div class="pol-body">
+                            <p>The opposite of LRU: evict the <b>most recently used</b> item. Sounds counterintuitive, but it's optimal for sequential scan patterns where you process each item once and never return to it.</p>
+                        </div>
+                        <div class="pros-cons">
+                            <div class="pro"><div class="label">Strengths</div><p>Optimal for sequential access patterns. Prevents a full table scan from flushing the entire cache.</p></div>
+                            <div class="con"><div class="label">Tradeoffs</div><p>Terrible for most workloads. Only useful in specific scenarios like database full-table scans or batch processing pipelines.</p></div>
+                        </div>
+                    </div>
+
+                    <div class="policy-card sieve">
+                        <div class="pol-header">
+                            <div class="pol-icon">&#127919;</div>
+                            <div>
+                                <div class="pol-name">SIEVE &mdash; The New Contender</div>
+                                <div class="pol-used">NSDI 2024 &bull; Research &bull; Next-gen cache systems</div>
+                            </div>
+                        </div>
+                        <div class="pol-body">
+                            <p>Published at NSDI 2024. Uses <b>one pointer and one bit per object</b>. Simpler than LRU, better hit ratios in benchmarks. The pointer scans the cache looking for items with the bit set to 0 (not recently accessed). Items that have been accessed get their bit set to 1 &mdash; they survive one pass.</p>
+                            <p>Think of it as a <b>lazy, forgiving FIFO</b>: items get one chance to prove they're still useful. If they've been accessed since the last scan, they survive. If not, they're evicted.</p>
+                        </div>
+                        <div class="pros-cons">
+                            <div class="pro"><div class="label">Strengths</div><p>Lower overhead than LRU. Better hit ratios than FIFO. One bit per object. No linked list reordering on every read. The next evolution of cache eviction.</p></div>
+                            <div class="con"><div class="label">Tradeoffs</div><p>New &mdash; not yet widely adopted in production. Less battle-tested than LRU. Performance advantages depend on workload characteristics.</p></div>
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+        </div>
+
+        <!-- 3: COMPARISON -->
+        <div class="section-block" id="comparison">
+            <div class="section-card">
+                <div class="section-header">
+                    <div class="section-icon" style="background: linear-gradient(135deg, var(--purple), var(--pink));">&#128202;</div>
+                    <div class="section-header-text">
+                        <h2>Policy Comparison</h2>
+                        <div class="subtitle">When to use which.</div>
+                    </div>
+                </div>
+                <div class="section-body">
+                    <div class="table-wrap">
+                        <table class="compare-table">
+                            <tr><th>Policy</th><th>Evicts</th><th>Overhead</th><th>Hit Rate</th><th>Best For</th></tr>
+                            <tr><td><b>LRU</b></td><td>Least recently accessed</td><td class="m">Medium (reorder on read)</td><td class="y">Good</td><td>General purpose, most apps</td></tr>
+                            <tr><td><b>LFU</b></td><td>Least frequently accessed</td><td class="m">Medium (counter per key)</td><td class="y">Best for skewed</td><td>Hot-key heavy workloads</td></tr>
+                            <tr><td><b>FIFO</b></td><td>Oldest item</td><td class="y">Lowest</td><td class="m">Near-LRU</td><td>Simple caches, high throughput</td></tr>
+                            <tr><td><b>TTL</b></td><td>Expired timer</td><td class="y">Low</td><td class="m">Varies</td><td>Freshness-critical data</td></tr>
+                            <tr><td><b>MRU</b></td><td>Most recently accessed</td><td class="m">Medium</td><td class="n">Poor (usually)</td><td>Sequential scans only</td></tr>
+                            <tr><td><b>SIEVE</b></td><td>Not recently accessed (1-bit)</td><td class="y">Low</td><td class="y">Better than LRU</td><td>Next-gen systems</td></tr>
+                        </table>
+                    </div>
+
+                    <p><b>The practical guidance:</b></p>
+                    <p>Starting a new system? <b>LRU</b>. It's the safe default.<br>
+                    Highly skewed traffic (celebrity profiles, viral posts)? <b>LFU</b>.<br>
+                    Need maximum throughput with minimal CPU? <b>FIFO</b>.<br>
+                    Data has a known freshness window? <b>TTL</b> (combine with LRU or FIFO).<br>
+                    Building a new cache from scratch? Look at <b>SIEVE</b>.</p>
+
+                    <p>In practice, most production systems <b>combine TTL with another policy</b>. Redis, for example, lets you set both a TTL and an eviction policy (LRU or LFU). The TTL handles freshness. The eviction policy handles memory pressure.</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- 4: TWITTER RESEARCH -->
+        <div class="section-block" id="twitter">
+            <div class="section-card">
+                <div class="section-header">
+                    <div class="section-icon" style="background: linear-gradient(135deg, var(--cyan), var(--blue));">&#128218;</div>
+                    <div class="section-header-text">
+                        <h2>Twitter's Research: The Surprise Finding</h2>
+                        <div class="subtitle">153 production cache clusters. 80 TB of trace data. The result nobody expected.</div>
+                    </div>
+                </div>
+                <div class="section-body">
+                    <div class="twitter-box">
+                        <div class="tw-header">
+                            <div class="tw-logo">&#128206;</div>
+                            <div>
+                                <div class="tw-title">OSDI 2020 &mdash; "A Large Scale Analysis of Hundreds of In-Memory Cache Clusters at Twitter"</div>
+                                <div class="tw-sub">Juncheng Yang, Yao Yue, K.V. Rashmi</div>
+                            </div>
+                        </div>
+                        <p>Twitter analyzed <b>153 production Memcached clusters</b>, collecting over <b>80 TB of trace data</b>. They compared LRU, FIFO, and other eviction policies across real workloads.</p>
+                        <div class="tw-quote">"FIFO often shows similar performance as LRU. LRU often exhibits advantages only when the cache size is severely limited."</div>
+                        <p>This means: at normal cache sizes (where you have reasonable headroom), the simpler FIFO algorithm delivers nearly identical cache hit rates to LRU &mdash; with <b>significantly less CPU overhead</b>.</p>
+                    </div>
+
+                    <p><b>Why does FIFO match LRU?</b></p>
+
+                    <p>Real-world access patterns follow <b>Zipfian distribution</b> &mdash; a small set of keys (the "head") gets the vast majority of requests. Both LRU and FIFO keep these hot keys in cache because they're constantly being re-inserted or accessed. The eviction policy primarily affects the "tail" keys &mdash; the rarely accessed ones. And for those, it barely matters which one you evict.</p>
+
+                    <div class="feat-grid">
+                        <div class="feat-card">
+                            <div class="feat-icon">&#128200;</div>
+                            <div>
+                                <h4>Zipfian Distribution</h4>
+                                <p>~20% of keys serve ~80% of requests. These hot keys survive eviction under any policy. The eviction algorithm only matters for the long tail.</p>
+                            </div>
+                        </div>
+                        <div class="feat-card">
+                            <div class="feat-icon">&#9200;</div>
+                            <div>
+                                <h4>TTL Dominates</h4>
+                                <p>Twitter found that short TTLs make proactive expiration more important than the eviction algorithm. Most items expire before eviction is needed.</p>
+                            </div>
+                        </div>
+                        <div class="feat-card">
+                            <div class="feat-icon">&#128187;</div>
+                            <div>
+                                <h4>CPU Savings</h4>
+                                <p>LRU requires reordering a linked list on every read. FIFO doesn't. At millions of ops/sec, the CPU savings from FIFO are significant.</p>
+                            </div>
+                        </div>
+                        <div class="feat-card">
+                            <div class="feat-icon">&#128269;</div>
+                            <div>
+                                <h4>Size Matters</h4>
+                                <p>LRU only outperforms FIFO when cache size is severely limited (&lt;10% of working set). At reasonable sizes, the gap disappears.</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="analogy"><b>The staff-level insight:</b> Don't pick an eviction policy based on intuition. "Evict the least recently used" feels right, but the data shows simpler is often good enough. Profile your access patterns. If your traffic is Zipfian (it almost certainly is), FIFO with TTL might be all you need.</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 5: INTERVIEW -->
+        <div class="section-block" id="interview">
+            <div class="section-card">
+                <div class="section-header">
+                    <div class="section-icon" style="background: linear-gradient(135deg, var(--rose), var(--purple));">&#128188;</div>
+                    <div class="section-header-text">
+                        <h2>The System Design Interview</h2>
+                        <div class="subtitle">"What eviction policy would you use and why?"</div>
+                    </div>
+                </div>
+                <div class="section-body">
+                    <div class="interview-box">
+                        <div class="q">"You're designing a cache for a social media feed. The cache is 10 GB. Your working set is 50 GB. What eviction policy do you use?"</div>
+                        <div class="label bad">&#10008; THE REJECTED ANSWER</div>
+                        <div class="wrong">"LRU. <b>It's the standard choice for caching.</b>"</div>
+                        <div style="margin-top: 0.5rem; font-size: 0.78rem; color: var(--text-dim);">Interviewer thinking: "They named the default without reasoning about the workload."</div>
+                    </div>
+
+                    <div class="interview-box" style="margin-top: 1rem;">
+                        <div class="q">Same question. Better answer.</div>
+                        <div class="label good">&#10004; THE STAFF-LEVEL ANSWER</div>
+                        <div class="a">"Social media feeds have <b>Zipfian access patterns</b> &mdash; celebrity accounts and viral posts dominate traffic. I'd use <b>LFU</b> to keep those hot keys cached, since they're accessed far more than the tail. I'd combine it with <b>TTL of 5 minutes</b> to bound staleness &mdash; feeds need to show recent content. For the eviction mechanism, Redis's <code>allkeys-lfu</code> with probabilistic aging handles the 'once-viral-now-cold' problem. I'd monitor cache hit rate &mdash; if it drops below 90%, either the cache is undersized or the TTL is too aggressive."</div>
+                    </div>
+
+                    <p><b>When to mention each policy:</b></p>
+                    <div class="feat-grid">
+                        <div class="feat-card">
+                            <div class="feat-icon">&#128338;</div>
+                            <div>
+                                <h4>LRU &mdash; Safe Default</h4>
+                                <p>Use when you don't know the access pattern. Works well for general web apps, session caches, API response caches.</p>
+                            </div>
+                        </div>
+                        <div class="feat-card">
+                            <div class="feat-icon">&#128200;</div>
+                            <div>
+                                <h4>LFU &mdash; Skewed Traffic</h4>
+                                <p>Use when a small set of keys gets most requests. Social feeds, product catalogs, celebrity profiles.</p>
+                            </div>
+                        </div>
+                        <div class="feat-card">
+                            <div class="feat-icon">&#128203;</div>
+                            <div>
+                                <h4>FIFO &mdash; Max Throughput</h4>
+                                <p>Mention the Twitter paper. Show you know LRU's overhead and that simpler can be better. Strong signal in interviews.</p>
+                            </div>
+                        </div>
+                        <div class="feat-card">
+                            <div class="feat-icon">&#9200;</div>
+                            <div>
+                                <h4>TTL &mdash; Always Combine</h4>
+                                <p>Never use eviction without TTL. TTL handles freshness. Eviction handles memory pressure. They solve different problems.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 6: TAKEAWAYS -->
+        <div class="section-block" id="takeaways">
+            <div class="section-card">
+                <div class="section-header">
+                    <div class="section-icon" style="background: linear-gradient(135deg, var(--green), var(--cyan));">&#127919;</div>
+                    <div class="section-header-text">
+                        <h2>Key Takeaways</h2>
+                        <div class="subtitle">What to remember about Cache Eviction Policies</div>
+                    </div>
+                </div>
+                <div class="section-body">
+                    <div class="takeaways">
+                        <div class="tk"><div class="tk-icon">&#128338;</div><h4>LRU Is Not Always Best</h4><p>Twitter proved FIFO matches LRU at normal cache sizes. Don't pick LRU by default &mdash; pick it because your workload needs it.</p></div>
+                        <div class="tk"><div class="tk-icon">&#128200;</div><h4>Know Your Access Pattern</h4><p>Zipfian? LFU. Uniform? FIFO. Sequential? MRU. The workload determines the policy, not convention.</p></div>
+                        <div class="tk"><div class="tk-icon">&#9200;</div><h4>Always Add TTL</h4><p>Eviction handles memory. TTL handles freshness. Every production cache needs both. They solve different problems.</p></div>
+                        <div class="tk"><div class="tk-icon">&#127919;</div><h4>Watch SIEVE</h4><p>One bit per object. Better than LRU in benchmarks. Lower overhead than LFU. The next generation of cache eviction.</p></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <footer>
+        <div class="gradient-line"></div>
+        <p>System Design for Dummies &mdash; Chapter 11: Cache Eviction Policies</p>
+        <div style="margin-top: 1.5rem; display: flex; gap: 1rem; justify-content: center;">
+            <a href="chapter10.html" class="nav-btn" style="background: var(--bg-card); border: 1px solid var(--border);">&larr; Ch 10: Caching Strategies</a>
+            <a href="index.html" class="nav-btn">All Chapters</a>
+        </div>
+    </footer>
+
+    <script>
+        const blocks = document.querySelectorAll('.section-block');
+        const observer = new IntersectionObserver((entries) => {
+            entries.forEach(entry => { if (entry.isIntersecting) entry.target.classList.add('visible'); });
+        }, { threshold: 0.1 });
+        blocks.forEach(b => observer.observe(b));
+        const sidebarLinks = document.querySelectorAll('.sidebar a');
+        const sections = document.querySelectorAll('[id]');
+        window.addEventListener('scroll', () => {
+            let current = '';
+            sections.forEach(section => { if (window.scrollY >= section.offsetTop - 200) current = section.getAttribute('id'); });
+            sidebarLinks.forEach(link => { link.classList.remove('active'); if (link.getAttribute('href') === '#' + current) link.classList.add('active'); });
+        });
+    </script>
+    <script>
+        if (new URLSearchParams(window.location.search).has('print')) {
+            const s = document.createElement('style');
+            s.textContent = `
+                .section-block { opacity:1!important; transform:none!important; transition:none!important; }
+                nav, .sidebar { display:none!important; }
+                @media print {
+                    @page { margin: 0; }
+                    * { -webkit-print-color-adjust:exact!important; print-color-adjust:exact!important; }
+                    body { background: var(--bg)!important; margin: 0!important; padding: 0!important; }
+                    .chapter-hero { min-height: 100vh!important; display: flex!important; flex-direction: column!important; align-items: center!important; justify-content: center!important; padding: 2rem!important; margin-top: 0!important; page-break-after: always!important; }
+                    .section-block { page-break-before: always!important; page-break-inside: avoid!important; padding-top: 2rem!important; }
+                    .section-card { page-break-inside: avoid!important; }
+                    .feat-grid, .takeaways, .interview-box, .table-wrap, .incident-hero, .analogy, .policy-card, .twitter-box { page-break-inside: avoid!important; }
+                    footer { page-break-before: always!important; }
+                    .content-section { padding: 0 2rem!important; }
+                }
+            `;
+            document.head.appendChild(s);
+            document.querySelectorAll('.section-block').forEach(el => { el.style.setProperty('opacity','1','important'); el.style.setProperty('transform','none','important'); el.classList.add('visible'); });
+            window.addEventListener('load', () => setTimeout(() => window.print(), 500));
+        }
+    </script>
+</body>
+</html>
