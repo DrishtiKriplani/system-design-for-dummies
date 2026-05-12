@@ -1,0 +1,541 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ch 12: Eventual Consistency &amp; Gossip Protocols &mdash; System Design for Dummies</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧠</text></svg>">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap');
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        :root {
+            --bg: #0f172a; --bg-card: #1e293b; --bg-code: #0d1117;
+            --text: #f8fafc; --text-muted: #94a3b8; --text-dim: #64748b;
+            --border: #334155; --blue: #3b82f6; --green: #10b981;
+            --orange: #f59e0b; --purple: #8b5cf6; --pink: #ec4899;
+            --red: #ef4444; --cyan: #06b6d4; --indigo: #6366f1;
+            --amber: #f59e0b; --rose: #f43f5e; --teal: #14b8a6;
+        }
+        html { scroll-behavior: smooth; scrollbar-width: thin; scrollbar-color: var(--border) var(--bg); }
+        body { font-family: 'Inter', -apple-system, sans-serif; background: var(--bg); color: var(--text); line-height: 1.6; overflow-x: hidden; }
+
+        nav { position: fixed; top: 0; left: 0; right: 0; z-index: 100; background: rgba(15,23,42,0.85); backdrop-filter: blur(20px); border-bottom: 1px solid rgba(51,65,85,0.5); }
+        .nav-inner { max-width: 1100px; margin: 0 auto; padding: 0.65rem 2rem; display: flex; align-items: center; justify-content: space-between; }
+        .nav-left { display: flex; align-items: center; gap: 1rem; }
+        .nav-logo { display: flex; align-items: center; gap: 0.6rem; font-weight: 800; font-size: 0.95rem; text-decoration: none; color: var(--text); letter-spacing: -0.5px; }
+        .nav-logo-icon { width: 28px; height: 28px; border-radius: 7px; background: linear-gradient(135deg, var(--blue), var(--purple)); display: flex; align-items: center; justify-content: center; font-size: 0.65rem; font-weight: 900; color: white; }
+        .nav-logo span { background: linear-gradient(135deg, var(--blue), var(--purple)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        .nav-sep { width: 1px; height: 18px; background: var(--border); }
+        .nav-chapter-badge { display: flex; align-items: center; gap: 0.4rem; font-size: 0.72rem; font-weight: 600; color: var(--cyan); background: rgba(6,182,212,0.08); border: 1px solid rgba(6,182,212,0.15); padding: 0.2rem 0.7rem; border-radius: 50px; }
+        .nav-chapter-badge .dot { width: 5px; height: 5px; border-radius: 50%; background: var(--cyan); }
+        .nav-center { display: flex; gap: 0.25rem; }
+        .nav-center a { color: var(--text-muted); text-decoration: none; font-size: 0.78rem; font-weight: 500; padding: 0.35rem 0.7rem; border-radius: 6px; transition: all 0.2s; }
+        .nav-center a:hover { color: var(--text); background: rgba(6,182,212,0.1); }
+        .nav-right { display: flex; align-items: center; }
+        .nav-counter { font-family: 'JetBrains Mono', monospace; font-size: 0.72rem; color: var(--text-dim); background: var(--bg-card); padding: 0.25rem 0.6rem; border-radius: 20px; border: 1px solid var(--border); }
+
+        .sidebar { position: fixed; left: 1.2rem; top: 50%; transform: translateY(-50%); z-index: 50; display: flex; flex-direction: column; gap: 4px; }
+        .sidebar a { width: 8px; height: 8px; border-radius: 50%; background: var(--border); transition: all 0.3s; display: block; position: relative; }
+        .sidebar a:hover { background: var(--text-muted); transform: scale(1.5); }
+        .sidebar a.active { background: var(--cyan); box-shadow: 0 0 8px rgba(6,182,212,0.5); transform: scale(1.5); }
+        .sidebar a .tooltip { position: absolute; left: 18px; top: 50%; transform: translateY(-50%); background: var(--bg-card); color: var(--text); padding: 0.3rem 0.7rem; border-radius: 6px; font-size: 0.65rem; white-space: nowrap; opacity: 0; pointer-events: none; transition: opacity 0.2s; border: 1px solid var(--border); }
+        .sidebar a:hover .tooltip { opacity: 1; }
+
+        .chapter-hero { padding: 8rem 2rem 4rem; text-align: center; position: relative; overflow: hidden; }
+        .chapter-hero-bg { position: absolute; inset: 0; background: radial-gradient(ellipse at 30% 50%, rgba(6,182,212,0.1) 0%, transparent 60%), radial-gradient(ellipse at 70% 30%, rgba(16,185,129,0.08) 0%, transparent 50%); }
+        .chapter-hero-content { position: relative; max-width: 700px; margin: 0 auto; }
+        .chapter-label { display: inline-flex; align-items: center; gap: 0.5rem; font-size: 0.75rem; font-weight: 600; text-transform: uppercase; letter-spacing: 2px; color: var(--cyan); margin-bottom: 1.2rem; }
+        .chapter-label .ch-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--cyan); }
+        .chapter-hero h1 { font-size: clamp(2rem, 5vw, 3rem); font-weight: 900; letter-spacing: -1.5px; line-height: 1.15; margin-bottom: 0.8rem; }
+        .chapter-hero h1 .gradient { background: linear-gradient(135deg, var(--cyan), var(--green)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        .chapter-hero-content > p { color: var(--text-muted); font-size: 1.05rem; max-width: 540px; margin: 0 auto; line-height: 1.7; }
+        .chapter-tags { display: flex; justify-content: center; gap: 0.5rem; flex-wrap: wrap; margin-top: 1.8rem; }
+        .chapter-tag { padding: 0.3rem 0.85rem; border-radius: 50px; font-size: 0.7rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
+
+        .content-section { max-width: 900px; margin: 0 auto; padding: 2rem 2rem 4rem; }
+        .section-block { position: relative; margin-bottom: 4rem; opacity: 0; transform: translateY(30px); transition: all 0.6s cubic-bezier(0.16, 1, 0.3, 1); }
+        .section-block.visible { opacity: 1; transform: translateY(0); }
+        .section-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 16px; overflow: hidden; }
+        .section-header { padding: 1.5rem 2rem 1rem; display: flex; align-items: flex-start; gap: 1rem; }
+        .section-icon { width: 44px; height: 44px; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 1.2rem; flex-shrink: 0; }
+        .section-header-text h2 { font-size: 1.3rem; font-weight: 800; letter-spacing: -0.5px; margin-bottom: 0.2rem; }
+        .section-header-text .subtitle { font-size: 0.85rem; color: var(--text-muted); line-height: 1.6; }
+        .section-body { padding: 0.5rem 2rem 2rem; }
+        .section-body p { color: var(--text-muted); font-size: 0.92rem; line-height: 1.8; margin-bottom: 1.2rem; }
+        .section-body p b { color: var(--text); }
+        .section-body code { font-family: 'JetBrains Mono', monospace; background: var(--bg-code); color: var(--cyan); padding: 0.1rem 0.4rem; border-radius: 4px; font-size: 0.82em; }
+
+        .incident-hero { background: linear-gradient(135deg, rgba(6,182,212,0.08), rgba(16,185,129,0.05)); border: 1px solid rgba(6,182,212,0.15); border-radius: 14px; padding: 2rem; text-align: center; margin-bottom: 1.5rem; }
+        .incident-hero .big-number { font-family: 'JetBrains Mono', monospace; font-size: 2.2rem; font-weight: 800; background: linear-gradient(135deg, var(--cyan), var(--green)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; margin: 0.8rem 0; line-height: 1.2; }
+
+        .feat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.8rem; margin: 1.5rem 0; }
+        .feat-card { background: rgba(30,41,59,0.5); border: 1px solid var(--border); border-radius: 12px; padding: 1.2rem; display: flex; gap: 0.8rem; align-items: flex-start; }
+        .feat-card .feat-icon { font-size: 1.4rem; flex-shrink: 0; }
+        .feat-card h4 { font-size: 0.88rem; font-weight: 700; margin-bottom: 0.2rem; }
+        .feat-card p { font-size: 0.8rem; color: var(--text-dim); line-height: 1.5; margin: 0; }
+
+        .table-wrap { border-radius: 12px; overflow: hidden; margin: 1.5rem 0; border: 1px solid var(--border); }
+        .compare-table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+        .compare-table th { background: var(--bg-card); color: var(--text-muted); padding: 0.8rem 1rem; text-align: left; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; font-size: 0.68rem; border-bottom: 2px solid var(--border); }
+        .compare-table td { padding: 0.7rem 1rem; border-bottom: 1px solid rgba(51,65,85,0.5); color: var(--text-muted); }
+        .compare-table tr:nth-child(even) td { background: rgba(15,23,42,0.3); }
+        .compare-table tr:last-child td { border-bottom: none; }
+        .y { color: var(--green); font-weight: 700; }
+        .n { color: #fca5a5; font-weight: 700; }
+        .m { color: var(--orange); font-weight: 700; }
+
+        .analogy { background: rgba(6,182,212,0.05); border: 1px solid rgba(6,182,212,0.12); border-radius: 10px; padding: 1rem 1.2rem; margin: 1rem 0; font-size: 0.82rem; color: var(--text-muted); line-height: 1.6; }
+        .analogy b { color: #67e8f9; }
+
+        .gif-frame { margin: 1.5rem 0; border-radius: 14px; overflow: hidden; border: 1px solid var(--border); background: var(--bg-code); display: flex; justify-content: center; align-items: center; padding: 1rem; }
+        .gif-frame img { max-width: 100%; height: auto; border-radius: 8px; }
+        .gif-caption { font-size: 0.75rem; color: var(--text-dim); text-align: center; margin-top: -0.5rem; margin-bottom: 1.5rem; font-style: italic; }
+
+        /* Mechanism Card */
+        .mech-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 14px; padding: 1.5rem; margin: 1.2rem 0; position: relative; overflow: hidden; }
+        .mech-card::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px; }
+        .mech-card.read-repair::before { background: linear-gradient(90deg, var(--cyan), var(--blue)); }
+        .mech-card.anti-entropy::before { background: linear-gradient(90deg, var(--green), var(--cyan)); }
+        .mech-card.hinted::before { background: linear-gradient(90deg, var(--orange), var(--amber)); }
+        .mech-card.gossip::before { background: linear-gradient(90deg, var(--purple), var(--pink)); }
+        .mech-card .mech-header { display: flex; align-items: center; gap: 0.8rem; margin-bottom: 0.8rem; }
+        .mech-card .mech-icon { font-size: 1.5rem; }
+        .mech-card .mech-name { font-size: 1.1rem; font-weight: 800; }
+        .mech-card .mech-used { font-size: 0.68rem; color: var(--text-dim); font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
+        .mech-card .mech-body { font-size: 0.85rem; color: var(--text-muted); line-height: 1.7; }
+        .mech-card .mech-body b { color: var(--text); }
+        .mech-card .pros-cons { display: flex; gap: 1rem; margin-top: 1rem; }
+        .mech-card .pro, .mech-card .con { flex: 1; font-size: 0.78rem; }
+        .mech-card .pro .label { color: var(--green); font-weight: 700; font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 0.3rem; }
+        .mech-card .con .label { color: var(--red); font-weight: 700; font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 0.3rem; }
+        .mech-card .pro p, .mech-card .con p { color: var(--text-dim); line-height: 1.5; margin: 0; }
+
+        /* Consistency level box */
+        .consistency-box { background: linear-gradient(135deg, rgba(16,185,129,0.06), rgba(6,182,212,0.04)); border: 1px solid rgba(16,185,129,0.15); border-radius: 14px; padding: 1.5rem; margin: 1.5rem 0; }
+        .consistency-box .cb-header { display: flex; align-items: center; gap: 0.6rem; margin-bottom: 1rem; }
+        .consistency-box .cb-logo { font-size: 1.3rem; }
+        .consistency-box .cb-title { font-size: 0.9rem; font-weight: 800; color: var(--green); }
+        .consistency-box .cb-sub { font-size: 0.7rem; color: var(--text-dim); }
+        .consistency-box p { font-size: 0.82rem; color: var(--text-muted); line-height: 1.7; margin-bottom: 0.8rem; }
+        .consistency-box p b { color: var(--text); }
+        .consistency-box .cb-quote { background: var(--bg-code); border-left: 3px solid var(--green); padding: 0.8rem 1rem; margin: 0.8rem 0; font-family: 'JetBrains Mono', monospace; font-size: 0.82rem; color: var(--green); border-radius: 0 8px 8px 0; }
+
+        .interview-box { background: linear-gradient(135deg, rgba(6,182,212,0.06), rgba(139,92,246,0.04)); border: 1px solid rgba(6,182,212,0.15); border-radius: 14px; padding: 1.5rem; margin: 1.5rem 0; }
+        .interview-box .q { font-size: 0.85rem; font-weight: 700; color: var(--text); margin-bottom: 0.5rem; padding-left: 1rem; border-left: 3px solid var(--cyan); }
+        .interview-box .a { font-size: 0.82rem; color: var(--text-muted); line-height: 1.7; margin-top: 0.8rem; padding-left: 1rem; border-left: 3px solid var(--green); }
+        .interview-box .wrong { font-size: 0.82rem; color: var(--text-muted); line-height: 1.7; margin-top: 0.8rem; padding-left: 1rem; border-left: 3px solid var(--red); }
+        .interview-box .wrong b { color: #fca5a5; }
+        .interview-box .a b { color: #6ee7b7; }
+        .interview-box .label { font-size: 0.62rem; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 0.3rem; }
+        .interview-box .label.bad { color: var(--red); }
+        .interview-box .label.good { color: var(--green); }
+
+        .takeaways { display: flex; gap: 1rem; margin: 1.5rem 0; }
+        .tk { flex: 1; background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; padding: 1.3rem; position: relative; overflow: hidden; }
+        .tk::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px; }
+        .tk:nth-child(1)::before { background: linear-gradient(90deg, var(--cyan), var(--blue)); }
+        .tk:nth-child(2)::before { background: linear-gradient(90deg, var(--green), var(--cyan)); }
+        .tk:nth-child(3)::before { background: linear-gradient(90deg, var(--orange), var(--amber)); }
+        .tk:nth-child(4)::before { background: linear-gradient(90deg, var(--purple), var(--pink)); }
+        .tk .tk-icon { font-size: 1.3rem; margin-bottom: 0.5rem; }
+        .tk h4 { font-size: 0.9rem; font-weight: 700; margin-bottom: 0.3rem; }
+        .tk p { font-size: 0.8rem; color: var(--text-dim); line-height: 1.6; }
+
+        footer { border-top: 1px solid var(--border); padding: 3rem 2rem; text-align: center; }
+        footer p { color: var(--text-dim); font-size: 0.85rem; }
+        footer .gradient-line { width: 100px; height: 3px; background: linear-gradient(90deg, var(--cyan), var(--green), var(--blue)); margin: 0 auto 1.5rem; border-radius: 2px; }
+        .nav-btn { display: inline-flex; align-items: center; gap: 0.5rem; padding: 0.7rem 1.5rem; background: linear-gradient(135deg, var(--cyan), var(--green)); color: white; border: none; border-radius: 10px; font-size: 0.9rem; font-weight: 600; cursor: pointer; text-decoration: none; transition: all 0.3s; margin-top: 1rem; }
+        .nav-btn:hover { transform: translateY(-2px); box-shadow: 0 8px 30px rgba(6,182,212,0.3); }
+
+        @media (max-width: 768px) {
+            .sidebar { display: none; }
+            .nav-center { display: none; }
+            .feat-grid { grid-template-columns: 1fr; }
+            .takeaways { flex-direction: column; }
+            .mech-card .pros-cons { flex-direction: column; }
+        }
+        @page { margin: 0; }
+    </style>
+</head>
+<body>
+
+    <nav>
+        <div class="nav-inner">
+            <div class="nav-left">
+                <a href="index.html" class="nav-logo"><div class="nav-logo-icon">SD</div><span>System Design for Dummies</span></a>
+                <div class="nav-sep"></div>
+                <div class="nav-chapter-badge"><div class="dot"></div>Chapter 12</div>
+            </div>
+            <div class="nav-center">
+                <a href="index.html">Home</a>
+                <a href="chapter9.html">Ch 9</a>
+                <a href="chapter10.html">Ch 10</a>
+                <a href="chapter11.html">Ch 11</a>
+            </div>
+            <div class="nav-right"><span class="nav-counter">7 sections</span></div>
+        </div>
+    </nav>
+
+    <div class="sidebar" id="sidebar">
+        <a href="#hero"><span class="tooltip">Intro</span></a>
+        <a href="#the-problem"><span class="tooltip">The Problem</span></a>
+        <a href="#replication"><span class="tooltip">Replication</span></a>
+        <a href="#mechanisms"><span class="tooltip">Repair Mechanisms</span></a>
+        <a href="#gossip"><span class="tooltip">Gossip</span></a>
+        <a href="#interview"><span class="tooltip">Interview</span></a>
+        <a href="#takeaways"><span class="tooltip">Takeaways</span></a>
+    </div>
+
+    <section class="chapter-hero" id="hero">
+        <div class="chapter-hero-bg"></div>
+        <div class="chapter-hero-content">
+            <div class="chapter-label"><div class="ch-dot"></div>Chapter 12 &mdash; Deep Dive</div>
+            <h1><span class="gradient">Eventual Consistency</span><br>&amp; Gossip Protocols</h1>
+            <p>"Async replication" is the surface answer. The real answer is two layers working together: replication with repair, and gossip for coordination. Here's how rumors actually become truth in a distributed system.</p>
+            <div class="chapter-tags">
+                <span class="chapter-tag" style="background: rgba(6,182,212,0.1); color: var(--cyan); border: 1px solid rgba(6,182,212,0.2);">Replication</span>
+                <span class="chapter-tag" style="background: rgba(16,185,129,0.1); color: var(--green); border: 1px solid rgba(16,185,129,0.2);">Read Repair</span>
+                <span class="chapter-tag" style="background: rgba(245,158,11,0.1); color: var(--orange); border: 1px solid rgba(245,158,11,0.2);">Anti-Entropy</span>
+                <span class="chapter-tag" style="background: rgba(139,92,246,0.1); color: var(--purple); border: 1px solid rgba(139,92,246,0.2);">Gossip</span>
+                <span class="chapter-tag" style="background: rgba(236,72,153,0.1); color: var(--pink); border: 1px solid rgba(236,72,153,0.2);">Hinted Handoff</span>
+            </div>
+        </div>
+    </section>
+
+    <div class="content-section">
+
+        <!-- 1: THE PROBLEM -->
+        <div class="section-block" id="the-problem">
+            <div class="section-card">
+                <div class="section-header">
+                    <div class="section-icon" style="background: linear-gradient(135deg, var(--cyan), var(--green));">&#127760;</div>
+                    <div class="section-header-text">
+                        <h2>The Incomplete Answer</h2>
+                        <div class="subtitle">"How is eventual consistency achieved in NoSQL?" The textbook answer is async replication. It's true. It's also missing half the story.</div>
+                    </div>
+                </div>
+                <div class="section-body">
+                    <div class="incident-hero">
+                        <p style="color: var(--text-muted); font-size: 0.95rem;">Write hits Replica A. The other replicas don't have it yet.</p>
+                        <div class="big-number">How do they catch up?</div>
+                        <p style="color: var(--text-muted); font-size: 0.95rem;">If the only answer is "async replication", you've described <i>what</i> happens, not <i>how</i>. Real systems need repair when replication drops messages, and coordination when nodes don't know who's alive.</p>
+                    </div>
+
+                    <p>Eventual consistency isn't a single trick. It's a <b>system of overlapping mechanisms</b> that each handle one failure mode &mdash; lost writes, slow replicas, dead nodes, network partitions. Async replication is the optimistic path. Everything else is what makes the optimistic path actually converge.</p>
+
+                    <p>Two layers work together:</p>
+
+                    <div class="feat-grid">
+                        <div class="feat-card">
+                            <div class="feat-icon">&#128221;</div>
+                            <div>
+                                <h4>Replication + Repair</h4>
+                                <p>The data layer. Writes fan out to replicas. Background processes (read repair, anti-entropy, hinted handoff) fix divergence when fanout fails.</p>
+                            </div>
+                        </div>
+                        <div class="feat-card">
+                            <div class="feat-icon">&#128483;</div>
+                            <div>
+                                <h4>Gossip Protocol</h4>
+                                <p>The coordination layer. Nodes exchange membership, liveness, and metadata with random peers. The cluster agrees on <i>who is in it</i> without a master.</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="analogy"><b>The intuition:</b> Think of how rumors spread. You tell two friends. They each tell two more. Within minutes the whole school knows &mdash; no principal needed. Gossip is the rumor. Replication is what carries the actual content. Repair is the friend who corrects the misheard version.</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 2: REPLICATION -->
+        <div class="section-block" id="replication">
+            <div class="section-card">
+                <div class="section-header">
+                    <div class="section-icon" style="background: linear-gradient(135deg, var(--blue), var(--cyan));">&#128257;</div>
+                    <div class="section-header-text">
+                        <h2>Replication &amp; The Consistency Knob</h2>
+                        <div class="subtitle">Async replication isn't a fixed setting. It's a per-request knob: how many replicas must respond before the client gets an ack?</div>
+                    </div>
+                </div>
+                <div class="section-body">
+                    <p>NoSQL systems like Cassandra and DynamoDB use <b>tunable consistency</b>: every read and every write specifies how many replicas must acknowledge before the operation is considered done. This is what the textbook calls "the consistency level."</p>
+
+                    <p>The classic formula: with <b>N</b> replicas, <b>W</b> writes acknowledged, and <b>R</b> reads acknowledged, if <code>W + R &gt; N</code>, the read is guaranteed to see the latest write. That's <b>strong consistency</b>. If <code>W + R &le; N</code>, you might read stale data &mdash; that's <b>eventual consistency</b>.</p>
+
+                    <div class="consistency-box">
+                        <div class="cb-header">
+                            <div class="cb-logo">&#9881;</div>
+                            <div>
+                                <div class="cb-title">Tunable Consistency &mdash; The Real Mechanism</div>
+                                <div class="cb-sub">Cassandra, DynamoDB, Riak, ScyllaDB</div>
+                            </div>
+                        </div>
+                        <p>A write with N=3 replicas can be configured as:</p>
+                        <div class="cb-quote">ONE &nbsp;&rarr;&nbsp; 1 replica acks &nbsp;&rarr;&nbsp; fast, eventually consistent<br>QUORUM &rarr;&nbsp; 2 replicas ack &nbsp;&rarr;&nbsp; strong consistency with R=QUORUM<br>ALL &nbsp;&rarr;&nbsp; 3 replicas ack &nbsp;&rarr;&nbsp; strongest, slowest, lowest availability</div>
+                        <p>The client tunes consistency <b>per request</b>. A user-facing read of "did my last write happen?" might use QUORUM. A background analytics job reads with ONE for throughput. <b>The same database supports both at the same time.</b></p>
+                    </div>
+
+                    <p>What happens to the replicas that don't ack in time? In strict synchronous systems, the write fails. In NoSQL with tunable consistency, the write succeeds as long as <b>W</b> replicas confirm &mdash; the rest catch up later, through the repair mechanisms below.</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- 3: REPAIR MECHANISMS -->
+        <div class="section-block" id="mechanisms">
+            <div class="section-card">
+                <div class="section-header">
+                    <div class="section-icon" style="background: linear-gradient(135deg, var(--green), var(--cyan));">&#128295;</div>
+                    <div class="section-header-text">
+                        <h2>The Repair Mechanisms</h2>
+                        <div class="subtitle">Three background processes that handle the inevitable: writes lost in transit, replicas that fell behind, nodes that came back from the dead.</div>
+                    </div>
+                </div>
+                <div class="section-body">
+
+                    <div class="mech-card read-repair">
+                        <div class="mech-header">
+                            <div class="mech-icon">&#128270;</div>
+                            <div>
+                                <div class="mech-name">Read Repair</div>
+                                <div class="mech-used">Cassandra &bull; DynamoDB &bull; Riak</div>
+                            </div>
+                        </div>
+                        <div class="mech-body">
+                            <p>When a read goes to multiple replicas and they return <b>different versions</b>, the coordinator detects the divergence, picks the winner (usually via last-write-wins timestamps or vector clocks), and <b>writes the correct value back</b> to the out-of-date replica &mdash; in the background, without blocking the client.</p>
+                            <p>Repair happens <b>on the read path</b>. Frequently-read keys converge fast. Rarely-read keys can stay diverged for a long time &mdash; which is why read repair alone isn't enough.</p>
+                        </div>
+                        <div class="pros-cons">
+                            <div class="pro"><div class="label">Strengths</div><p>Cheap. Only repairs data that's actually being read. Hot keys converge quickly without any explicit maintenance.</p></div>
+                            <div class="con"><div class="label">Tradeoffs</div><p>Cold data can stay inconsistent indefinitely. If a key is never read, it's never repaired. You still need anti-entropy for full coverage.</p></div>
+                        </div>
+                    </div>
+
+                    <div class="mech-card anti-entropy">
+                        <div class="mech-header">
+                            <div class="mech-icon">&#127794;</div>
+                            <div>
+                                <div class="mech-name">Anti-Entropy (Merkle Tree Sync)</div>
+                                <div class="mech-used">Cassandra (nodetool repair) &bull; DynamoDB &bull; Riak</div>
+                            </div>
+                        </div>
+                        <div class="mech-body">
+                            <p>A scheduled background job that compares <b>full data sets between replicas</b>. To make this efficient at terabyte scale, replicas build a <b>Merkle tree</b> &mdash; a hash tree where each leaf is a hash of a range of data. To compare two replicas, you compare the root hashes. If they match, you're done. If not, you recurse into the differing subtrees until you find the specific rows that differ.</p>
+                            <p>This is how Cassandra's <code>nodetool repair</code> works. It's expensive &mdash; gigabytes of network traffic &mdash; so it's typically run weekly or after a node has been down for a long time.</p>
+                        </div>
+                        <div class="pros-cons">
+                            <div class="pro"><div class="label">Strengths</div><p>Catches everything &mdash; cold keys, lost writes, bit rot, missed hints. The "ground truth" reconciliation layer.</p></div>
+                            <div class="con"><div class="label">Tradeoffs</div><p>Expensive. Can saturate the network. Must be throttled in production. If skipped for too long, tombstones can resurrect deleted data (Cassandra's "zombie" problem).</p></div>
+                        </div>
+                    </div>
+
+                    <div class="mech-card hinted">
+                        <div class="mech-header">
+                            <div class="mech-icon">&#128221;</div>
+                            <div>
+                                <div class="mech-name">Hinted Handoff</div>
+                                <div class="mech-used">Cassandra &bull; DynamoDB &bull; Dynamo paper</div>
+                            </div>
+                        </div>
+                        <div class="mech-body">
+                            <p>When a coordinator tries to write to a replica that's <b>temporarily down</b>, it doesn't drop the write. It stores a <b>hint</b> &mdash; a sticky note that says "deliver this write to node X when X comes back." When the failed node returns, the coordinator replays all queued hints.</p>
+                            <p>Hinted handoff is what lets a write succeed at <code>QUORUM</code> even when one of the three replicas is briefly unreachable. It's the bridge between "the write is acknowledged" and "the write is on all replicas."</p>
+                        </div>
+                        <div class="pros-cons">
+                            <div class="pro"><div class="label">Strengths</div><p>Keeps availability high during short outages. Replicas catch up automatically without needing a full anti-entropy run.</p></div>
+                            <div class="con"><div class="label">Tradeoffs</div><p>Hints are bounded in size and time (Cassandra defaults: 3 hours). If a node is down longer, hints are dropped &mdash; and you must run anti-entropy to recover.</p></div>
+                        </div>
+                    </div>
+
+                    <p><b>How they layer:</b> Hinted handoff handles seconds-to-minutes outages. Read repair handles divergence on hot keys. Anti-entropy is the safety net for everything else &mdash; cold keys, dropped hints, long outages. <b>Production systems need all three.</b></p>
+                </div>
+            </div>
+        </div>
+
+        <!-- 4: GOSSIP -->
+        <div class="section-block" id="gossip">
+            <div class="section-card">
+                <div class="section-header">
+                    <div class="section-icon" style="background: linear-gradient(135deg, var(--purple), var(--pink));">&#128483;</div>
+                    <div class="section-header-text">
+                        <h2>Gossip &mdash; The Coordination Layer</h2>
+                        <div class="subtitle">Repair mechanisms move data. Gossip moves the answers to "who's alive?", "who owns what?", "what's the cluster state?" &mdash; with no master.</div>
+                    </div>
+                </div>
+                <div class="section-body">
+
+                    <div class="gif-frame">
+                        <img src="gossip-protocol.gif" alt="Gossip protocol propagation animation">
+                    </div>
+                    <p class="gif-caption">Each second, every node picks a random peer and exchanges state. The cluster converges in O(log N) rounds.</p>
+
+                    <p>In a cluster of 1,000 nodes, no single node can ping all others every second &mdash; the traffic would scale O(N&sup2;). Gossip solves this by having each node talk to just <b>2&ndash;3 random peers per round</b>. State propagates exponentially, the same way a rumor spreads through a crowd.</p>
+
+                    <div class="mech-card gossip">
+                        <div class="mech-header">
+                            <div class="mech-icon">&#128172;</div>
+                            <div>
+                                <div class="mech-name">How the Protocol Works</div>
+                                <div class="mech-used">Cassandra &bull; Consul &bull; Riak &bull; Redis Cluster &bull; HashiCorp Serf</div>
+                            </div>
+                        </div>
+                        <div class="mech-body">
+                            <p><b>Each second</b>, every node:</p>
+                            <p>1. Picks a few random peers from its known list.<br>
+                            2. Sends them its current view of cluster state &mdash; node IDs, generation numbers, heartbeats, schema versions.<br>
+                            3. Receives their view in return.<br>
+                            4. Merges the two views, taking the latest version per node (typically by version number).</p>
+                            <p>After a few rounds, every node has the same view. Convergence is <b>O(log N)</b> &mdash; in a 1,000-node cluster, the whole thing knows within ~10 rounds (~10 seconds).</p>
+                        </div>
+                    </div>
+
+                    <p><b>What gossip carries (and what it doesn't):</b></p>
+
+                    <div class="table-wrap">
+                        <table class="compare-table">
+                            <tr><th>Gossip Carries</th><th>Gossip Does NOT Carry</th></tr>
+                            <tr><td>Node membership (who's in the cluster)</td><td>Your actual data rows</td></tr>
+                            <tr><td>Liveness / heartbeats (who's alive)</td><td>Read/write traffic</td></tr>
+                            <tr><td>Token ownership (which keys go where)</td><td>Query results</td></tr>
+                            <tr><td>Schema versions, datacenter info</td><td>Replication itself</td></tr>
+                        </table>
+                    </div>
+
+                    <p><b>Gossip doesn't replicate data &mdash; it keeps nodes informed.</b> Replication carries data. Gossip carries the map of where data lives.</p>
+
+                    <div class="analogy"><b>The mental model:</b> Replication is the postal service delivering letters. Gossip is the neighborhood network that tells everyone "the Smiths moved to 42 Oak Street." Without gossip, the postal service doesn't know where to deliver. Without delivery, the addresses are pointless.</div>
+
+                    <p><b>Failure detection &mdash; the phi accrual detector:</b> Instead of a simple "missed 3 heartbeats &rarr; dead," Cassandra uses an <b>accrual failure detector</b>. It tracks the distribution of heartbeat intervals from each peer and computes a continuous "phi" value &mdash; the suspicion level. The longer a heartbeat is overdue relative to history, the higher phi climbs. The application decides at what phi threshold to treat the node as down. This is far more robust than fixed timeouts on a noisy network.</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- 5: INTERVIEW -->
+        <div class="section-block" id="interview">
+            <div class="section-card">
+                <div class="section-header">
+                    <div class="section-icon" style="background: linear-gradient(135deg, var(--cyan), var(--purple));">&#128188;</div>
+                    <div class="section-header-text">
+                        <h2>The System Design Interview</h2>
+                        <div class="subtitle">"How does eventual consistency actually work?"</div>
+                    </div>
+                </div>
+                <div class="section-body">
+                    <div class="interview-box">
+                        <div class="q">"You're designing a multi-region NoSQL store. Explain how a write becomes eventually consistent."</div>
+                        <div class="label bad">&#10008; THE REJECTED ANSWER</div>
+                        <div class="wrong">"The write goes to one replica, then <b>async replication</b> copies it to the others. Eventually they all have it."</div>
+                        <div style="margin-top: 0.5rem; font-size: 0.78rem; color: var(--text-dim);">Interviewer thinking: "Correct but shallow. What happens if a replica is down? How do nodes find each other? They named the mechanism but not the system."</div>
+                    </div>
+
+                    <div class="interview-box" style="margin-top: 1rem;">
+                        <div class="q">Same question. Better answer.</div>
+                        <div class="label good">&#10004; THE STAFF-LEVEL ANSWER</div>
+                        <div class="a">"The client picks a <b>consistency level</b> &mdash; say W=QUORUM with N=3 replicas. The coordinator fans the write to all three. As soon as two ack, the client gets success. The third replica catches up via one of three mechanisms: <b>hinted handoff</b> if it was briefly unreachable, <b>read repair</b> next time someone reads that key, or <b>anti-entropy</b> Merkle-tree sync on a scheduled run. Behind all of this, a <b>gossip protocol</b> keeps every node informed about who's in the cluster, who's alive (via phi-accrual failure detection), and which tokens each node owns &mdash; that's how the coordinator knew which three replicas to fan out to in the first place. So 'eventual consistency' is really four mechanisms layered together, each handling a different failure mode."</div>
+                    </div>
+
+                    <p><b>Follow-up questions to expect:</b></p>
+                    <div class="feat-grid">
+                        <div class="feat-card">
+                            <div class="feat-icon">&#10067;</div>
+                            <div>
+                                <h4>"What if W + R &le; N?"</h4>
+                                <p>You can read stale data. Acceptable for analytics, view counts, recommendations. Not for "did my payment go through?"</p>
+                            </div>
+                        </div>
+                        <div class="feat-card">
+                            <div class="feat-icon">&#10067;</div>
+                            <div>
+                                <h4>"What if two writes conflict?"</h4>
+                                <p>Last-write-wins (timestamps), vector clocks (track causality), or CRDTs (mergeable types). Pick based on the data model.</p>
+                            </div>
+                        </div>
+                        <div class="feat-card">
+                            <div class="feat-icon">&#10067;</div>
+                            <div>
+                                <h4>"Why not just use a master?"</h4>
+                                <p>Single point of failure. Doesn't scale across regions. Gossip is decentralized &mdash; any node can join or leave without coordination.</p>
+                            </div>
+                        </div>
+                        <div class="feat-card">
+                            <div class="feat-icon">&#10067;</div>
+                            <div>
+                                <h4>"Limits of eventual consistency?"</h4>
+                                <p>Bad for: balances, inventory, uniqueness constraints. Good for: feeds, counters, leaderboards, session data, analytics.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 6: TAKEAWAYS -->
+        <div class="section-block" id="takeaways">
+            <div class="section-card">
+                <div class="section-header">
+                    <div class="section-icon" style="background: linear-gradient(135deg, var(--green), var(--cyan));">&#127919;</div>
+                    <div class="section-header-text">
+                        <h2>Key Takeaways</h2>
+                        <div class="subtitle">What to remember about eventual consistency</div>
+                    </div>
+                </div>
+                <div class="section-body">
+                    <div class="takeaways">
+                        <div class="tk"><div class="tk-icon">&#128257;</div><h4>Replication Is Tunable</h4><p>W + R &gt; N gives you strong consistency. W + R &le; N gives you availability. The same database supports both, per request.</p></div>
+                        <div class="tk"><div class="tk-icon">&#128295;</div><h4>Three Repair Layers</h4><p>Hinted handoff for short outages. Read repair for hot keys. Anti-entropy for cold keys and long outages. All three or it doesn't converge.</p></div>
+                        <div class="tk"><div class="tk-icon">&#128483;</div><h4>Gossip &ne; Replication</h4><p>Gossip carries metadata: membership, liveness, token ownership. It enables replication at scale. It is not replication itself.</p></div>
+                        <div class="tk"><div class="tk-icon">&#127759;</div><h4>Convergence Is Earned</h4><p>"Eventually consistent" doesn't mean magic. It means four mechanisms working in concert, each compensating for one type of failure.</p></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <footer>
+        <div class="gradient-line"></div>
+        <p>System Design for Dummies &mdash; Chapter 12: Eventual Consistency &amp; Gossip Protocols</p>
+        <div style="margin-top: 1.5rem; display: flex; gap: 1rem; justify-content: center;">
+            <a href="chapter11.html" class="nav-btn" style="background: var(--bg-card); border: 1px solid var(--border);">&larr; Ch 11: Cache Eviction</a>
+            <a href="index.html" class="nav-btn">All Chapters</a>
+        </div>
+    </footer>
+
+    <script>
+        const blocks = document.querySelectorAll('.section-block');
+        const observer = new IntersectionObserver((entries) => {
+            entries.forEach(entry => { if (entry.isIntersecting) entry.target.classList.add('visible'); });
+        }, { threshold: 0.1 });
+        blocks.forEach(b => observer.observe(b));
+        const sidebarLinks = document.querySelectorAll('.sidebar a');
+        const sections = document.querySelectorAll('[id]');
+        window.addEventListener('scroll', () => {
+            let current = '';
+            sections.forEach(section => { if (window.scrollY >= section.offsetTop - 200) current = section.getAttribute('id'); });
+            sidebarLinks.forEach(link => { link.classList.remove('active'); if (link.getAttribute('href') === '#' + current) link.classList.add('active'); });
+        });
+    </script>
+    <script>
+        if (new URLSearchParams(window.location.search).has('print')) {
+            const s = document.createElement('style');
+            s.textContent = `
+                .section-block { opacity:1!important; transform:none!important; transition:none!important; }
+                nav, .sidebar { display:none!important; }
+                @media print {
+                    @page { margin: 0; }
+                    * { -webkit-print-color-adjust:exact!important; print-color-adjust:exact!important; }
+                    body { background: var(--bg)!important; margin: 0!important; padding: 0!important; }
+                    .chapter-hero { min-height: 100vh!important; display: flex!important; flex-direction: column!important; align-items: center!important; justify-content: center!important; padding: 2rem!important; margin-top: 0!important; page-break-after: always!important; }
+                    .section-block { page-break-before: always!important; page-break-inside: avoid!important; padding-top: 2rem!important; }
+                    .section-card { page-break-inside: avoid!important; }
+                    .feat-grid, .takeaways, .interview-box, .table-wrap, .incident-hero, .analogy, .mech-card, .consistency-box, .gif-frame { page-break-inside: avoid!important; }
+                    footer { page-break-before: always!important; }
+                    .content-section { padding: 0 2rem!important; }
+                }
+            `;
+            document.head.appendChild(s);
+            document.querySelectorAll('.section-block').forEach(el => { el.style.setProperty('opacity','1','important'); el.style.setProperty('transform','none','important'); el.classList.add('visible'); });
+            window.addEventListener('load', () => setTimeout(() => window.print(), 500));
+        }
+    </script>
+</body>
+</html>
